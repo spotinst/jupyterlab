@@ -1,10 +1,10 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { ServerConnection } from '../serverconnection';
-import { Session } from '.';
-import { URLExt } from '@jupyterlab/coreutils';
-import { updateLegacySessionModel, validateModel } from './validate';
+import {URLExt} from '@jupyterlab/coreutils';
+import {Session} from '.';
+import {ServerConnection} from '../serverconnection';
+import {updateLegacySessionModel, validateModel} from './validate';
 
 type DeepPartial<T> = {
   [P in keyof T]?: DeepPartial<T[P]>;
@@ -91,6 +91,10 @@ export async function getSessionModel(
   return data;
 }
 
+function sleep(ms: number | undefined) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
  * Create a new session, or return an existing session if the session path
  * already exists.
@@ -100,16 +104,37 @@ export async function startSession(
   settings: ServerConnection.ISettings = ServerConnection.makeSettings()
 ): Promise<Session.IModel> {
   const url = URLExt.join(settings.baseUrl, SESSION_SERVICE_URL);
-  const init = {
+  const body = JSON.stringify(options)
+  const bodyjson = JSON.parse(body);
+  bodyjson["id"] = "";
+  let init = {
     method: 'POST',
-    body: JSON.stringify(options)
+    body: JSON.stringify(bodyjson)
   };
-  const response = await ServerConnection.makeRequest(url, init, settings);
-  if (response.status !== 201) {
-    const err = await ServerConnection.ResponseError.create(response);
-    throw err;
+  let data = {"id": "", "execution_state": "waiting"};
+  let count = 0
+  while (count++ < 600) {
+    const response = await ServerConnection.makeRequest(url, init, settings);
+    if (response.status !== 201) {
+      throw await ServerConnection.ResponseError.create(response);
+    }
+    data = await response.json();
+    if (data.execution_state != "waiting") {
+      console.log("2 Kernel started in session " + data.id + " after " + count + " seconds");
+      break;
+    } else {
+      bodyjson["id"] = data.id;
+      init = {
+        method: 'POST',
+        body: JSON.stringify(bodyjson)
+      };
+      await sleep(1000);
+      console.log("2 Waiting for kernel in session " + data.id + " for " + count + " seconds");
+    }
   }
-  const data = await response.json();
+  if (count >= 600) {
+    throw new Error("10 minute timeout waiting for kernel to start");
+  }
   updateLegacySessionModel(data);
   validateModel(data);
   return data;
