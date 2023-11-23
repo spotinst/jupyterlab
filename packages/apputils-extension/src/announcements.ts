@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) Jupyter Development Team.
+ * Distributed under the terms of the Modified BSD License.
+ */
+
 import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
@@ -12,7 +17,7 @@ const COMMAND_HELP_OPEN = 'help:open';
 const NEWS_API_URL = '/lab/api/news';
 const UPDATE_API_URL = '/lab/api/update';
 const PRIVACY_URL =
-  'https://jupyterlab.readthedocs.io/en/3.6.x/privacy_policies.html';
+  'https://jupyterlab.readthedocs.io/en/latest/privacy_policies.html';
 
 /**
  * Call the announcement API
@@ -47,6 +52,8 @@ async function requestAPI<T>(
 
 export const announcements: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/apputils-extension:announcements',
+  description:
+    'Add the announcement feature. It will fetch news on the internet and check for application updates.',
   autoStart: true,
   optional: [ISettingRegistry, ITranslator],
   activate: (

@@ -18,6 +18,18 @@ test('Open the settings editor with a specific search query', async ({
   ).toEqual('Command Palette');
 
   await expect(page.locator('.jp-SettingsForm')).toHaveCount(1);
+
+  const pluginList = page.locator('.jp-PluginList');
+
+  expect(await pluginList.screenshot()).toMatchSnapshot(
+    'settings-plugin-list.png'
+  );
+
+  const settingsPanel = page.locator('.jp-SettingsPanel');
+
+  expect(await settingsPanel.screenshot()).toMatchSnapshot(
+    'settings-panel.png'
+  );
 });
 
 test.describe('change font-size', () => {
@@ -30,7 +42,7 @@ test.describe('change font-size', () => {
   const createMarkdownFile = async page => {
     await page.waitForSelector('div[role="main"] >> text=Launcher');
     await page.click('.jp-LauncherCard[title="Create a new markdown file"]');
-    return await page.waitForSelector('.jp-FileEditor .CodeMirror-code');
+    return await page.waitForSelector('.jp-FileEditor .cm-content');
   };
   const inputMarkdownFile = async (page, markdownFile) => {
     await markdownFile.focus();
@@ -40,7 +52,7 @@ test.describe('change font-size', () => {
   };
   const getCodeCellFontSize = async page => {
     const cellElement = await page.$(
-      'div.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell.jp-mod-noOutputs.jp-mod-active.jp-mod-selected .CodeMirror-line'
+      'div.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell.jp-mod-noOutputs.jp-mod-active.jp-mod-selected .cm-line'
     );
     const computedStyle = await page.evaluate(
       el => getComputedStyle(el),
@@ -85,7 +97,7 @@ test.describe('change font-size', () => {
     await page.waitForSelector('.jp-Notebook-cell');
 
     const cellElement = await page.$(
-      'div.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell.jp-mod-noOutputs.jp-mod-active.jp-mod-selected .CodeMirror-line'
+      'div.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell.jp-mod-noOutputs.jp-mod-active.jp-mod-selected .cm-line'
     );
     const computedStyle = await page.evaluate(
       el => getComputedStyle(el),
@@ -103,7 +115,7 @@ test.describe('change font-size', () => {
     await page.waitForSelector('.jp-Notebook-cell');
 
     const cellElement = await page.$(
-      'div.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell.jp-mod-noOutputs.jp-mod-active.jp-mod-selected .CodeMirror-line'
+      'div.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell.jp-mod-noOutputs.jp-mod-active.jp-mod-selected .cm-line'
     );
     const computedStyle = await page.evaluate(
       el => getComputedStyle(el),
@@ -116,13 +128,13 @@ test.describe('change font-size', () => {
     const markdownFile = await createMarkdownFile(page);
     await inputMarkdownFile(page, markdownFile);
     await page.evaluate(() => {
-      return window.jupyterapp.commands.execute('fileeditor:markdown-preview');
+      return window.galata.app.commands.execute('fileeditor:markdown-preview');
     });
     const fontSize = await getMarkdownFontSize(page);
 
     await changeCodeFontSize(page, 'Increase Content Font Size');
 
-    await page.waitForSelector('.jp-FileEditor .CodeMirror-code');
+    await page.waitForSelector('.jp-FileEditor .cm-content');
     const fileElement = await page.$('.jp-RenderedHTMLCommon');
     const computedStyle = await page.evaluate(
       el => getComputedStyle(el),
@@ -135,13 +147,13 @@ test.describe('change font-size', () => {
     const markdownFile = await createMarkdownFile(page);
     await inputMarkdownFile(page, markdownFile);
     await page.evaluate(() => {
-      return window.jupyterapp.commands.execute('fileeditor:markdown-preview');
+      return window.galata.app.commands.execute('fileeditor:markdown-preview');
     });
     const fontSize = await getMarkdownFontSize(page);
 
     await changeCodeFontSize(page, 'Decrease Content Font Size');
 
-    await page.waitForSelector('.jp-FileEditor .CodeMirror-code');
+    await page.waitForSelector('.jp-FileEditor .cm-content');
     const fileElement = await page.$('.jp-RenderedHTMLCommon');
     const computedStyle = await page.evaluate(
       el => getComputedStyle(el),
@@ -185,4 +197,32 @@ test.describe('change font-size', () => {
     );
     expect(computedStyle.fontSize).toEqual(`${fontSize - 1}px`);
   });
+});
+
+test('Check codemirror settings can all be set at the same time.', async ({
+  page
+}) => {
+  await page.evaluate(async () => {
+    await window.jupyterapp.commands.execute('settingeditor:open', {
+      query: 'CodeMirror'
+    });
+  });
+
+  await expect(page.locator('.jp-SettingsForm')).toHaveCount(1);
+
+  const textList: Array[string] = [
+    'Code Folding',
+    'Highlight the active line',
+    'Highlight trailing white space',
+    'Highlight white space'
+  ];
+  let locators = [];
+  for (const selectText of textList) {
+    let locator = page.getByLabel(selectText);
+    await locator.click();
+    locators.push(locator);
+  }
+  for (const locator of locators) {
+    await expect(locator).toBeChecked();
+  }
 });

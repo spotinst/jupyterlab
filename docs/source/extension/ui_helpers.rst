@@ -1,3 +1,6 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 User Interface Helpers
 ======================
 
@@ -327,7 +330,7 @@ notifications using:
 
 .. code:: typescript
 
-  Notification.dimiss(id?: string): void;
+  Notification.dismiss(id?: string): void;
 
 .. note::
 

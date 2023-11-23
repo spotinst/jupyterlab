@@ -3,12 +3,14 @@
 
 import { expect, galata, test } from '@jupyterlab/galata';
 
+const MAX_OUTPUTS = 5;
+
 test.use({
   mockSettings: {
     ...galata.DEFAULT_SETTINGS,
     '@jupyterlab/notebook-extension:tracker': {
       ...galata.DEFAULT_SETTINGS['@jupyterlab/notebook-extension:tracker'],
-      maxNumberOutputs: 5
+      maxNumberOutputs: MAX_OUTPUTS
     }
   }
 });
@@ -16,10 +18,9 @@ test.use({
 test('Limit cell outputs', async ({ page }) => {
   await page.notebook.createNew();
 
-  await page.waitForSelector('text=| Idle');
-
-  await page.locator('div[role="main"] >> textarea')
-    .fill(`from IPython.display import display, Markdown
+  await page.locator(
+    '.jp-Cell-inputArea >> .cm-editor >> .cm-content[contenteditable="true"]'
+  ).type(`from IPython.display import display, Markdown
 
 for i in range(10):
     display(Markdown('_Markdown_ **text**'))
@@ -27,23 +28,18 @@ for i in range(10):
 
   await page.notebook.run();
 
-  await expect(page.locator('.jp-RenderedMarkdown')).toHaveCount(5);
+  await expect(page.locator('.jp-RenderedMarkdown')).toHaveCount(MAX_OUTPUTS);
   await expect(page.locator('.jp-TrimmedOutputs')).toHaveText(
-    `
-          Output of this cell has been trimmed on the initial display.
-          Displaying the first 5 top outputs.
-          Click on this message to get the complete output.
-`
+    'Show more outputs'
   );
 });
 
 test("Don't limit cell outputs if input is requested", async ({ page }) => {
   await page.notebook.createNew();
 
-  await page.waitForSelector('text=| Idle');
-
-  await page.locator('div[role="main"] >> textarea')
-    .fill(`from IPython.display import display, Markdown
+  await page.locator(
+    '.jp-Cell-inputArea >> .cm-editor >> .cm-content[contenteditable="true"]'
+  ).type(`from IPython.display import display, Markdown
 
 for i in range(10):
     display(Markdown('_Markdown_ **text**'))
@@ -53,8 +49,9 @@ input('Your age:')
 
   await page.menu.clickMenuItem('Run>Run All Cells');
   await page.waitForSelector('.jp-Stdin >> text=Your age:');
-
-  expect(await page.locator('.jp-RenderedMarkdown').count()).toBeGreaterThan(5);
+  expect(await page.locator('.jp-RenderedMarkdown').count()).toBeGreaterThan(
+    MAX_OUTPUTS
+  );
 
   await page.keyboard.press('Enter');
 });
@@ -62,10 +59,9 @@ input('Your age:')
 test('Display input value', async ({ page }) => {
   await page.notebook.createNew();
 
-  await page.waitForSelector('text=| Idle');
-
-  await page.locator('div[role="main"] >> textarea')
-    .fill(`from IPython.display import display, Markdown
+  await page.locator(
+    '.jp-Cell-inputArea >> .cm-editor >> .cm-content[contenteditable="true"]'
+  ).type(`from IPython.display import display, Markdown
 
 for i in range(10):
     display(Markdown('_Markdown_ **text**'))
@@ -82,7 +78,9 @@ for i in range(10):
   await page.keyboard.type('42');
   await page.keyboard.press('Enter');
 
-  expect(await page.locator('.jp-RenderedMarkdown').count()).toBeGreaterThan(5);
+  expect(await page.locator('.jp-RenderedMarkdown').count()).toBeGreaterThan(
+    MAX_OUTPUTS
+  );
   await expect(page.locator('.jp-RenderedText').first()).toHaveText(
     'Your age: 42'
   );

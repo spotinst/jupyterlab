@@ -9,23 +9,23 @@ import { ISignal, Signal } from '@lumino/signaling';
 
 import { Builder, BuildManager } from './builder';
 
-import { NbConvert, NbConvertManager } from './nbconvert';
-
 import { Contents, ContentsManager } from './contents';
 
 import { Event, EventManager } from './event';
 
-import { KernelManager } from './kernel';
+import { Kernel, KernelManager } from './kernel';
 
 import { KernelSpec, KernelSpecManager } from './kernelspec';
+
+import { NbConvert, NbConvertManager } from './nbconvert';
+
+import { ServerConnection } from './serverconnection';
 
 import { Session, SessionManager } from './session';
 
 import { Setting, SettingManager } from './setting';
 
 import { Terminal, TerminalManager } from './terminal';
-
-import { ServerConnection } from './serverconnection';
 
 import { User, UserManager } from './user';
 
@@ -38,28 +38,30 @@ export class ServiceManager implements ServiceManager.IManager {
   /**
    * Construct a new services provider.
    */
-  constructor(options: ServiceManager.IOptions = {}) {
+  constructor(options: Partial<ServiceManager.IOptions> = {}) {
     const defaultDrive = options.defaultDrive;
     const serverSettings =
       options.serverSettings ?? ServerConnection.makeSettings();
     const standby = options.standby ?? 'when-hidden';
     const normalized = { defaultDrive, serverSettings, standby };
 
-    const kernelManager = new KernelManager(normalized);
     this.serverSettings = serverSettings;
-    this.contents = new ContentsManager(normalized);
-    this.events = new EventManager(normalized);
-    this.sessions = new SessionManager({
-      ...normalized,
-      kernelManager: kernelManager
-    });
-    this.settings = new SettingManager(normalized);
-    this.terminals = new TerminalManager(normalized);
-    this.builder = new BuildManager(normalized);
-    this.workspaces = new WorkspaceManager(normalized);
-    this.nbconvert = new NbConvertManager(normalized);
-    this.kernelspecs = new KernelSpecManager(normalized);
-    this.user = new UserManager(normalized);
+    this.contents = options.contents || new ContentsManager(normalized);
+    this.events = options.events || new EventManager(normalized);
+    this.kernels = options.kernels || new KernelManager(normalized);
+    this.sessions =
+      options.sessions ||
+      new SessionManager({
+        ...normalized,
+        kernelManager: this.kernels
+      });
+    this.settings = options.settings || new SettingManager(normalized);
+    this.terminals = options.terminals || new TerminalManager(normalized);
+    this.builder = options.builder || new BuildManager(normalized);
+    this.workspaces = options.workspaces || new WorkspaceManager(normalized);
+    this.nbconvert = options.nbconvert || new NbConvertManager(normalized);
+    this.kernelspecs = options.kernelspecs || new KernelSpecManager(normalized);
+    this.user = options.user || new UserManager(normalized);
 
     // Proxy all connection failures from the individual service managers.
     this.kernelspecs.connectionFailure.connect(this._onConnectionFailure, this);
@@ -115,27 +117,32 @@ export class ServiceManager implements ServiceManager.IManager {
   /**
    * Get the session manager instance.
    */
-  readonly sessions: SessionManager;
+  readonly sessions: Session.IManager;
 
   /**
-   * Get the session manager instance.
+   * Get the kernel manager instance.
    */
-  readonly kernelspecs: KernelSpecManager;
+  readonly kernels: Kernel.IManager;
+
+  /**
+   * Get the kernelspec manager instance.
+   */
+  readonly kernelspecs: KernelSpec.IManager;
 
   /**
    * Get the setting manager instance.
    */
-  readonly settings: SettingManager;
+  readonly settings: Setting.IManager;
 
   /**
    * The builder for the manager.
    */
-  readonly builder: BuildManager;
+  readonly builder: Builder.IManager;
 
   /**
    * Get the contents manager instance.
    */
-  readonly contents: ContentsManager;
+  readonly contents: Contents.IManager;
 
   /**
    * The event manager instance.
@@ -145,7 +152,7 @@ export class ServiceManager implements ServiceManager.IManager {
   /**
    * Get the terminal manager instance.
    */
-  readonly terminals: TerminalManager;
+  readonly terminals: Terminal.IManager;
 
   /**
    * Get the user manager instance.
@@ -155,12 +162,12 @@ export class ServiceManager implements ServiceManager.IManager {
   /**
    * Get the workspace manager instance.
    */
-  readonly workspaces: WorkspaceManager;
+  readonly workspaces: Workspace.IManager;
 
   /**
    * Get the nbconvert manager instance.
    */
-  readonly nbconvert: NbConvertManager;
+  readonly nbconvert: NbConvert.IManager;
 
   /**
    * Test whether the manager is ready.
@@ -193,9 +200,46 @@ export namespace ServiceManager {
   /**
    * A service manager interface.
    */
-  export interface IManager extends IDisposable {
+  export interface IManager extends IDisposable, IManagers {
+    /**
+     * Test whether the manager is ready.
+     */
+    readonly isReady: boolean;
+
+    /**
+     * A promise that fulfills when the manager is initially ready.
+     */
+    readonly ready: Promise<void>;
+
+    /**
+     * A signal emitted when there is a connection failure with the server.
+     */
+    readonly connectionFailure: ISignal<IManager, Error>;
+  }
+
+  /**
+   * The options used to create a service manager.
+   */
+  export interface IOptions extends IManagers {
+    /**
+     * The default drive for the contents manager.
+     */
+    readonly defaultDrive: Contents.IDrive;
+
+    /**
+     * When the manager stops polling the API. Defaults to `when-hidden`.
+     */
+    standby: Poll.Standby | (() => boolean | Poll.Standby);
+  }
+
+  /**
+   * The managers provided by the service manager.
+   */
+  interface IManagers {
     /**
      * The builder for the manager.
+     *
+     * @deprecated will be removed in JupyterLab v5
      */
     readonly builder: Builder.IManager;
 
@@ -206,16 +250,8 @@ export namespace ServiceManager {
 
     /**
      * The events service manager.
-     *
-     * #### Notes
-     * The events manager is optional until JupyterLab 4.
      */
-    readonly events?: Event.IManager;
-
-    /**
-     * Test whether the manager is ready.
-     */
-    readonly isReady: boolean;
+    readonly events: Event.IManager;
 
     /**
      * A promise that fulfills when the manager is initially ready.
@@ -233,7 +269,12 @@ export namespace ServiceManager {
     readonly sessions: Session.IManager;
 
     /**
-     * The session manager for the manager.
+     * The kernel manager of the manager.
+     */
+    readonly kernels: Kernel.IManager;
+
+    /**
+     * The kernelspec manager for the manager.
      */
     readonly kernelspecs: KernelSpec.IManager;
 
@@ -250,7 +291,7 @@ export namespace ServiceManager {
     /**
      * The user manager for the manager.
      */
-    readonly user?: User.IManager;
+    readonly user: User.IManager;
 
     /**
      * The workspace manager for the manager.
@@ -261,30 +302,5 @@ export namespace ServiceManager {
      * The nbconvert manager for the manager.
      */
     readonly nbconvert: NbConvert.IManager;
-
-    /**
-     * A signal emitted when there is a connection failure with the server.
-     */
-    readonly connectionFailure: ISignal<IManager, Error>;
-  }
-
-  /**
-   * The options used to create a service manager.
-   */
-  export interface IOptions {
-    /**
-     * The server settings of the manager.
-     */
-    readonly serverSettings?: ServerConnection.ISettings;
-
-    /**
-     * The default drive for the contents manager.
-     */
-    readonly defaultDrive?: Contents.IDrive;
-
-    /**
-     * When the manager stops polling the API. Defaults to `when-hidden`.
-     */
-    standby?: Poll.Standby;
   }
 }

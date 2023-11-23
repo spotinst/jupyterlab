@@ -1,4 +1,3 @@
-# coding: utf-8
 """Jupyter LabExtension Entry Points."""
 
 # Copyright (c) Jupyter Development Team.
@@ -25,15 +24,13 @@ from .commands import (
     install_extension,
     link_package,
     list_extensions,
+    lock_extension,
     uninstall_extension,
     unlink_package,
+    unlock_extension,
     update_extension,
 )
-from .federated_labextensions import (
-    build_labextension,
-    develop_labextension_py,
-    watch_labextension,
-)
+from .federated_labextensions import build_labextension, develop_labextension_py, watch_labextension
 from .labapp import LabApp
 
 flags = dict(base_flags)
@@ -97,9 +94,13 @@ enable_aliases["level"] = "EnableLabExtensionsApp.level"
 disable_aliases = copy(aliases)
 disable_aliases["level"] = "DisableLabExtensionsApp.level"
 
-VERSION = get_app_version()
+lock_aliases = copy(aliases)
+lock_aliases["level"] = "LockLabExtensionsApp.level"
 
-HERE = os.path.abspath(os.path.dirname(__file__))
+unlock_aliases = copy(aliases)
+unlock_aliases["level"] = "UnlockLabExtensionsApp.level"
+
+VERSION = get_app_version()
 
 LABEXTENSION_COMMAND_WARNING = "Users should manage prebuilt extensions with package managers like pip and conda, and extension authors are encouraged to distribute their extensions as prebuilt packages"
 
@@ -156,7 +157,8 @@ class BaseExtensionApp(JupyterApp, DebugLogFileMixin):
 
     def start(self):
         if self.app_dir and self.app_dir.startswith(HERE):
-            raise ValueError("Cannot run lab extension commands in core app")
+            msg = "Cannot run lab extension commands in core app"
+            raise ValueError(msg)
         with self.debug_logging():
             ans = self.run_task()
             if ans and self.should_build:
@@ -213,25 +215,23 @@ class InstallLabExtensionApp(BaseExtensionApp):
         pinned_versions = self.pin.split(",")
         self.extra_args = self.extra_args or [os.getcwd()]
         return any(
-            [
-                install_extension(
-                    arg,
-                    # Pass in pinned alias if we have it
-                    pin=pinned_versions[i] if i < len(pinned_versions) else None,
-                    app_options=AppOptions(
-                        app_dir=self.app_dir,
-                        logger=self.log,
-                        core_config=self.core_config,
-                        labextensions_path=self.labextensions_path,
-                    ),
-                )
-                for i, arg in enumerate(self.extra_args)
-            ]
+            install_extension(
+                arg,
+                # Pass in pinned alias if we have it
+                pin=pinned_versions[i] if i < len(pinned_versions) else None,
+                app_options=AppOptions(
+                    app_dir=self.app_dir,
+                    logger=self.log,
+                    core_config=self.core_config,
+                    labextensions_path=self.labextensions_path,
+                ),
+            )
+            for i, arg in enumerate(self.extra_args)
         )
 
 
 class DevelopLabExtensionApp(BaseExtensionApp):
-    description = "Develop labextension"
+    description = "(developer) Develop labextension"
     flags = develop_flags
 
     user = Bool(False, config=True, help="Whether to do a user install")
@@ -246,7 +246,7 @@ class DevelopLabExtensionApp(BaseExtensionApp):
     )
 
     def run_task(self):
-        "Add config for this labextension"
+        """Add config for this labextension"""
         self.extra_args = self.extra_args or [os.getcwd()]
         for arg in self.extra_args:
             develop_labextension_py(
@@ -261,7 +261,7 @@ class DevelopLabExtensionApp(BaseExtensionApp):
 
 
 class BuildLabExtensionApp(BaseExtensionApp):
-    description = "Build labextension"
+    description = "(developer) Build labextension"
 
     static_url = Unicode("", config=True, help="Sets the url for static assets when building")
 
@@ -295,7 +295,7 @@ class BuildLabExtensionApp(BaseExtensionApp):
 
 
 class WatchLabExtensionApp(BaseExtensionApp):
-    description = "Watch labextension"
+    description = "(developer) Watch labextension"
 
     development = Bool(True, config=True, help="Build in development mode")
 
@@ -330,14 +330,16 @@ class UpdateLabExtensionApp(BaseExtensionApp):
     description = "Update labextension(s)"
     flags = update_flags
 
-    all = Bool(False, config=True, help="Whether to update all extensions")
+    all = Bool(False, config=True, help="Whether to update all extensions")  # noqa
 
     def run_task(self):
         self.deprecation_warning(
             "Updating extensions with the jupyter labextension update command is now deprecated and will be removed in a future major version of JupyterLab."
         )
         if not self.all and not self.extra_args:
-            self.log.warn("Specify an extension to update, or use --all to update all extensions")
+            self.log.warning(
+                "Specify an extension to update, or use --all to update all extensions"
+            )
             return False
         app_options = AppOptions(
             app_dir=self.app_dir,
@@ -347,7 +349,7 @@ class UpdateLabExtensionApp(BaseExtensionApp):
         )
         if self.all:
             return update_extension(all_=True, app_options=app_options)
-        return any([update_extension(name=arg, app_options=app_options) for arg in self.extra_args])
+        return any(update_extension(name=arg, app_options=app_options) for arg in self.extra_args)
 
 
 class LinkLabExtensionApp(BaseExtensionApp):
@@ -368,7 +370,7 @@ class LinkLabExtensionApp(BaseExtensionApp):
             labextensions_path=self.labextensions_path,
             core_config=self.core_config,
         )
-        return any([link_package(arg, app_options=options) for arg in self.extra_args])
+        return any(link_package(arg, app_options=options) for arg in self.extra_args)
 
 
 class UnlinkLabExtensionApp(BaseExtensionApp):
@@ -382,14 +384,14 @@ class UnlinkLabExtensionApp(BaseExtensionApp):
             labextensions_path=self.labextensions_path,
             core_config=self.core_config,
         )
-        return any([unlink_package(arg, app_options=options) for arg in self.extra_args])
+        return any(unlink_package(arg, app_options=options) for arg in self.extra_args)
 
 
 class UninstallLabExtensionApp(BaseExtensionApp):
     description = "Uninstall labextension(s) by name"
     flags = uninstall_flags
 
-    all = Bool(False, config=True, help="Whether to uninstall all extensions")
+    all = Bool(False, config=True, help="Whether to uninstall all extensions")  # noqa
 
     def run_task(self):
         self.deprecation_warning(
@@ -404,10 +406,7 @@ class UninstallLabExtensionApp(BaseExtensionApp):
             core_config=self.core_config,
         )
         return any(
-            [
-                uninstall_extension(arg, all_=self.all, app_options=options)
-                for arg in self.extra_args
-            ]
+            uninstall_extension(arg, all_=self.all, app_options=options) for arg in self.extra_args
         )
 
 
@@ -450,7 +449,7 @@ class DisableLabExtensionsApp(BaseExtensionApp):
     description = "Disable labextension(s) by name"
     aliases = disable_aliases
 
-    level = Unicode("sys_prefix", help="Level at which to enable: sys_prefix, user, system").tag(
+    level = Unicode("sys_prefix", help="Level at which to disable: sys_prefix, user, system").tag(
         config=True
     )
 
@@ -463,6 +462,51 @@ class DisableLabExtensionsApp(BaseExtensionApp):
         )
         [
             disable_extension(arg, app_options=app_options, level=self.level)
+            for arg in self.extra_args
+        ]
+        self.log.info(
+            "Starting with JupyterLab 4.1 individual plugins can be re-enabled"
+            " in the user interface. While all plugins which were previously"
+            " disabled have been locked, you need to explicitly lock any newly"
+            " disabled plugins by using `jupyter labextension lock` command."
+        )
+
+
+class LockLabExtensionsApp(BaseExtensionApp):
+    description = "Lock labextension(s) by name"
+    aliases = lock_aliases
+
+    level = Unicode("sys_prefix", help="Level at which to lock: sys_prefix, user, system").tag(
+        config=True
+    )
+
+    def run_task(self):
+        app_options = AppOptions(
+            app_dir=self.app_dir,
+            logger=self.log,
+            core_config=self.core_config,
+            labextensions_path=self.labextensions_path,
+        )
+        [lock_extension(arg, app_options=app_options, level=self.level) for arg in self.extra_args]
+
+
+class UnlockLabExtensionsApp(BaseExtensionApp):
+    description = "Unlock labextension(s) by name"
+    aliases = unlock_aliases
+
+    level = Unicode("sys_prefix", help="Level at which to unlock: sys_prefix, user, system").tag(
+        config=True
+    )
+
+    def run_task(self):
+        app_options = AppOptions(
+            app_dir=self.app_dir,
+            logger=self.log,
+            core_config=self.core_config,
+            labextensions_path=self.labextensions_path,
+        )
+        [
+            unlock_extension(arg, app_options=app_options, level=self.level)
             for arg in self.extra_args
         ]
 
@@ -494,13 +538,13 @@ class CheckLabExtensionsApp(BaseExtensionApp):
             self.exit(1)
 
 
-_examples = """
+_EXAMPLES = """
 jupyter labextension list                        # list all configured labextensions
-jupyter labextension develop                     # develop a prebuilt labextension
-jupyter labextension build                       # build a prebuilt labextension
-jupyter labextension watch                       # watch a prebuilt labextension
 jupyter labextension install <extension name>    # install a labextension
 jupyter labextension uninstall <extension name>  # uninstall a labextension
+jupyter labextension develop                     # (developer) develop a prebuilt labextension
+jupyter labextension build                       # (developer) build a prebuilt labextension
+jupyter labextension watch                       # (developer) watch a prebuilt labextension
 """
 
 
@@ -510,26 +554,28 @@ class LabExtensionApp(JupyterApp):
     name = "jupyter labextension"
     version = VERSION
     description = "Work with JupyterLab extensions"
-    examples = _examples
+    examples = _EXAMPLES
 
-    subcommands = dict(
-        install=(InstallLabExtensionApp, "Install labextension(s)"),
-        develop=(DevelopLabExtensionApp, "Develop labextension(s)"),
-        build=(BuildLabExtensionApp, "Build labextension"),
-        watch=(WatchLabExtensionApp, "Watch labextension"),
-        update=(UpdateLabExtensionApp, "Update labextension(s)"),
-        uninstall=(UninstallLabExtensionApp, "Uninstall labextension(s)"),
-        list=(ListLabExtensionsApp, "List labextensions"),
-        link=(LinkLabExtensionApp, "Link labextension(s)"),
-        unlink=(UnlinkLabExtensionApp, "Unlink labextension(s)"),
-        enable=(EnableLabExtensionsApp, "Enable labextension(s)"),
-        disable=(DisableLabExtensionsApp, "Disable labextension(s)"),
-        check=(CheckLabExtensionsApp, "Check labextension(s)"),
-    )
+    subcommands = {
+        "install": (InstallLabExtensionApp, "Install labextension(s)"),
+        "update": (UpdateLabExtensionApp, "Update labextension(s)"),
+        "uninstall": (UninstallLabExtensionApp, "Uninstall labextension(s)"),
+        "list": (ListLabExtensionsApp, "List labextensions"),
+        "link": (LinkLabExtensionApp, "Link labextension(s)"),
+        "unlink": (UnlinkLabExtensionApp, "Unlink labextension(s)"),
+        "enable": (EnableLabExtensionsApp, "Enable labextension(s)"),
+        "disable": (DisableLabExtensionsApp, "Disable labextension(s)"),
+        "lock": (LockLabExtensionsApp, "Lock labextension(s)"),
+        "unlock": (UnlockLabExtensionsApp, "Unlock labextension(s)"),
+        "check": (CheckLabExtensionsApp, "Check labextension(s)"),
+        "develop": (DevelopLabExtensionApp, "(developer) Develop labextension(s)"),
+        "build": (BuildLabExtensionApp, "(developer) Build labextension"),
+        "watch": (WatchLabExtensionApp, "(developer) Watch labextension"),
+    }
 
     def start(self):
         """Perform the App's functions as configured"""
-        super(LabExtensionApp, self).start()
+        super().start()
 
         # The above should have called a subcommand and raised NoStart; if we
         # get here, it didn't, so we should self.log.info a message.

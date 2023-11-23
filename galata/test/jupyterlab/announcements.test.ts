@@ -13,9 +13,7 @@ test.use({
 });
 
 test('Announcements requires user agreement', async ({ page }) => {
-  const notifications = await page.evaluate(() => {
-    return (window.jupyterapp as any).notificationManager.notifications;
-  });
+  const notifications = await page.notifications;
 
   expect(notifications).toHaveLength(1);
   expect(notifications[0].message).toEqual(
@@ -74,12 +72,10 @@ test.describe('Update available', () => {
 
     await page.goto();
 
-    const notifications = await page.evaluate(() => {
-      return (window.jupyterapp as any).notificationManager.notifications;
-    });
+    const notifications = await page.notifications;
 
-    const updates = notifications.filter(n =>
-      n.options?.data?.tags?.includes('update')
+    const updates = notifications.filter(
+      n => n.options?.data?.tags?.includes('update')
     );
     expect(updates).toHaveLength(1);
     expect(updates[0].message).toEqual(message);
@@ -100,9 +96,7 @@ test.describe('Update available', () => {
 
     await page.goto();
 
-    const notifications = await page.evaluate(() => {
-      return (window.jupyterapp as any).notificationManager.notifications;
-    });
+    const notifications = await page.notifications;
 
     expect(
       notifications.filter(n => n.options?.data?.tags?.includes('update'))
@@ -129,9 +123,7 @@ test.describe('Update available', () => {
 
     await page.goto();
 
-    const notifications = await page.evaluate(() => {
-      return (window.jupyterapp as any).notificationManager.notifications;
-    });
+    const notifications = await page.notifications;
     expect(
       notifications.filter(n => n.options?.data?.tags?.includes('update'))
     ).toHaveLength(0);
@@ -193,12 +185,10 @@ test.describe('Fetch news', () => {
 
     await page.goto();
 
-    const notifications = await page.evaluate(() => {
-      return (window.jupyterapp as any).notificationManager.notifications;
-    });
+    const notifications = await page.notifications;
 
-    const news = notifications.filter(n =>
-      n.options?.data?.tags?.includes('news')
+    const news = notifications.filter(
+      n => n.options?.data?.tags?.includes('news')
     );
     expect(news).toHaveLength(2);
     expect(news.filter(n => n.options.data.id === id)[0].message).toEqual(
@@ -222,12 +212,10 @@ test.describe('Fetch news', () => {
 
     await page.goto();
 
-    const notifications = await page.evaluate(() => {
-      return (window.jupyterapp as any).notificationManager.notifications;
-    });
+    const notifications = await page.notifications;
 
-    const news = notifications.filter(n =>
-      n.options?.data?.tags?.includes('news')
+    const news = notifications.filter(
+      n => n.options?.data?.tags?.includes('news')
     );
     expect(news).toHaveLength(0);
   });
@@ -251,12 +239,10 @@ test.describe('Fetch news', () => {
 
     await page.goto();
 
-    const notifications = await page.evaluate(() => {
-      return (window.jupyterapp as any).notificationManager.notifications;
-    });
+    const notifications = await page.notifications;
 
-    const news = notifications.filter(n =>
-      n.options?.data?.tags?.includes('news')
+    const news = notifications.filter(
+      n => n.options?.data?.tags?.includes('news')
     );
     expect(news).toHaveLength(1);
     expect(news[0].id).not.toEqual(id);

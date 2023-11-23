@@ -53,7 +53,7 @@ export class DebuggerModel implements IDebugger.Model.IService {
   readonly sources: SourcesModel;
 
   /**
-   * The kernel sources model.
+   * The sources model.
    */
   readonly kernelSources: KernelSourcesModel;
 
@@ -72,6 +72,16 @@ export class DebuggerModel implements IDebugger.Model.IService {
   }
   set hasRichVariableRendering(v: boolean) {
     this._hasRichVariableRendering = v;
+  }
+
+  /**
+   * Whether the kernel supports the copyToGlobals request.
+   */
+  get supportCopyToGlobals(): boolean {
+    return this._supportCopyToGlobals;
+  }
+  set supportCopyToGlobals(v: boolean) {
+    this._supportCopyToGlobals = v;
   }
 
   /**
@@ -149,6 +159,7 @@ export class DebuggerModel implements IDebugger.Model.IService {
   private _disposed = new Signal<this, void>(this);
   private _isDisposed = false;
   private _hasRichVariableRendering = false;
+  private _supportCopyToGlobals = false;
   private _stoppedThreads = new Set<number>();
   private _title = '-';
   private _titleChanged = new Signal<this, string>(this);

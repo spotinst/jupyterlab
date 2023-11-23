@@ -1,31 +1,26 @@
-## Jira ticket
+<!--
+Thanks for contributing to JupyterLab!
+Please fill out the following items to submit a pull request.
+See the contributing guidelines for more information:
+https://github.com/jupyterlab/jupyterlab/blob/main/CONTRIBUTING.md
+-->
 
-https://spotinst.atlassian.net/browse/BGD-XXXX
+## References
 
-## Checklist
-- [ ] I added a Jira ticket link
-- [ ] I added a changeset with the `simple-changeset add` command
-- [ ] I filled in the test plan
-- [ ] I executed the tests and filled in the test results
+<!-- Note issue numbers this pull request addresses (should be at least one, see contributing guidelines above). -->
 
-## Why
+<!-- Note any other pull requests that address this issue and how this pull request is different. -->
 
-_A short description of why this change is necessary. If this is a bug fix, include steps to reproduce the issue_
+## Code changes
 
-## What
+<!-- Describe the code changes and how they address the issue. -->
 
-_What has been modified. Expose the key decisions you have made during this PR to facilitate the discussion with your reviewer_
+## User-facing changes
 
-## How to test
+<!-- Describe any visual or user interaction changes and how they address the issue. -->
 
-_Step by step instructions to test your feature/fix_
+<!-- For visual changes, include before and after screenshots or GIF/mp4/other video demo here. -->
 
-## Test plan and results
+## Backwards-incompatible changes
 
-_Feel free to add screenshots showing test results_
-
-| Test | Description       | Result | Notes                      |
-|------|-------------------|--------|----------------------------|
-| 1    | Test with input A | Pass   | Some notes about the test  |
-| 2    | Test with input B | Pass   | Some notes about the test  |
-| 3    | Test with input C | Pass   | Some notes about the test  |
+<!-- Describe any backwards-incompatible changes to JupyterLab public APIs. -->

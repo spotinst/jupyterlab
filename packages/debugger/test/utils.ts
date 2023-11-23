@@ -1,6 +1,7 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
-// Utils from: https://github.com/jupyterlab/jupyterlab/blob/b1e2b83047421bf7196bec5f2a94d0616dcb2329/packages/services/test/utils.ts
+
+// Utils inspired by: packages/services/test/utils.ts
 
 import { ServerConnection } from '@jupyterlab/services';
 
@@ -58,6 +59,7 @@ export interface IService {
  * @param status The status code for the response.
  * @param body The body for the response.
  */
+// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 export function handleRequest(item: IService, status: number, body: any): void {
   // Store the existing fetch function.
   const oldFetch = item.serverSettings.fetch;

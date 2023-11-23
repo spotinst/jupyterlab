@@ -3,11 +3,9 @@
 
 import { Session } from '@jupyterlab/services';
 
-import {
-  createSession,
-  JupyterServer,
-  signalToPromises
-} from '@jupyterlab/testutils';
+import { createSession } from '@jupyterlab/docregistry/lib/testutils';
+
+import { JupyterServer, signalToPromises } from '@jupyterlab/testing';
 
 import { find } from '@lumino/algorithm';
 
@@ -22,9 +20,8 @@ import { IDebugger } from '../src/tokens';
 const server = new JupyterServer();
 
 beforeAll(async () => {
-  jest.setTimeout(20000);
   await server.start();
-});
+}, 30000);
 
 afterAll(async () => {
   await server.shutdown();
@@ -32,9 +29,11 @@ afterAll(async () => {
 
 describe('Debugger.Session', () => {
   let connection: Session.ISessionConnection;
+  let config: IDebugger.IConfig;
 
   beforeEach(async () => {
     const path = UUID.uuid4();
+    config = new Debugger.Config();
     connection = await createSession({
       name: '',
       type: 'test',
@@ -50,7 +49,8 @@ describe('Debugger.Session', () => {
   describe('#isDisposed', () => {
     it('should return whether the object is disposed', () => {
       const debugSession = new Debugger.Session({
-        connection
+        connection,
+        config
       });
       expect(debugSession.isDisposed).toEqual(false);
       debugSession.dispose();
@@ -61,7 +61,8 @@ describe('Debugger.Session', () => {
   describe('#eventMessage', () => {
     it('should be emitted when sending debug messages', async () => {
       const debugSession = new Debugger.Session({
-        connection
+        connection,
+        config
       });
       let events: string[] = [];
       debugSession.eventMessage.connect((sender, event) => {
@@ -78,7 +79,8 @@ describe('Debugger.Session', () => {
   describe('#sendRequest success', () => {
     it('should send debug messages to the kernel', async () => {
       const debugSession = new Debugger.Session({
-        connection
+        connection,
+        config
       });
       await debugSession.start();
       const code = 'i=0\ni+=1\ni+=1';
@@ -93,7 +95,8 @@ describe('Debugger.Session', () => {
   describe('#sendRequest failure', () => {
     it('should handle replies with success false', async () => {
       const debugSession = new Debugger.Session({
-        connection
+        connection,
+        config
       });
       await debugSession.start();
       const reply = await debugSession.sendRequest('evaluate', {
@@ -127,11 +130,13 @@ describe('protocol', () => {
   ];
 
   let connection: Session.ISessionConnection;
+  let config: IDebugger.IConfig;
   let debugSession: Debugger.Session;
   let threadId = 1;
 
   beforeEach(async () => {
     const path = UUID.uuid4();
+    config = new Debugger.Config();
     connection = await createSession({
       name: '',
       type: 'test',
@@ -139,7 +144,8 @@ describe('protocol', () => {
     });
     await connection.changeKernel({ name: 'python3' });
     debugSession = new Debugger.Session({
-      connection
+      connection,
+      config
     });
     await debugSession.start();
 
@@ -152,11 +158,12 @@ describe('protocol', () => {
             threadId = msg.body.threadId;
             break;
           }
-          case 'stopped':
+          case 'stopped': {
             const msg = event as DebugProtocol.StoppedEvent;
             threadId = msg.body.threadId!;
             stoppedFuture.resolve();
             break;
+          }
           default:
             break;
         }
@@ -178,14 +185,14 @@ describe('protocol', () => {
 
     // wait for the first stopped event
     await stoppedFuture.promise;
-  });
+  }, 30000);
 
   afterEach(async () => {
     await debugSession.stop();
     debugSession.dispose();
     await connection.shutdown();
     connection.dispose();
-  });
+  }, 30000);
 
   describe('#debugInfo', () => {
     it('should return the state of the current debug session', async () => {

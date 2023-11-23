@@ -14,14 +14,18 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 import {
-  CommandToolbarButton,
   ICommandPalette,
   MainAreaWidget,
-  Toolbar,
   WidgetTracker
 } from '@jupyterlab/apputils';
 import { IEditorServices } from '@jupyterlab/codeeditor';
-import { IFormComponentRegistry, launchIcon } from '@jupyterlab/ui-components';
+import {
+  CommandToolbarButton,
+  IFormRendererRegistry,
+  launchIcon,
+  Toolbar,
+  ToolbarButton
+} from '@jupyterlab/ui-components';
 import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import {
   IJSONSettingEditorTracker,
@@ -31,6 +35,7 @@ import type {
   JsonSettingEditor,
   SettingsEditor
 } from '@jupyterlab/settingeditor';
+import { IPluginManager } from '@jupyterlab/pluginmanager';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { IStateDB } from '@jupyterlab/statedb';
 import { ITranslator } from '@jupyterlab/translation';
@@ -57,14 +62,20 @@ type SettingEditorType = 'ui' | 'json';
  */
 const plugin: JupyterFrontEndPlugin<ISettingEditorTracker> = {
   id: '@jupyterlab/settingeditor-extension:form-ui',
+  description: 'Adds the interactive settings editor and provides its tracker.',
   requires: [
     ISettingRegistry,
     IStateDB,
     ITranslator,
-    IFormComponentRegistry,
+    IFormRendererRegistry,
     ILabStatus
   ],
-  optional: [ILayoutRestorer, ICommandPalette, IJSONSettingEditorTracker],
+  optional: [
+    ILayoutRestorer,
+    ICommandPalette,
+    IJSONSettingEditorTracker,
+    IPluginManager
+  ],
   autoStart: true,
   provides: ISettingEditorTracker,
   activate
@@ -78,11 +89,12 @@ function activate(
   registry: ISettingRegistry,
   state: IStateDB,
   translator: ITranslator,
-  editorRegistry: IFormComponentRegistry,
+  editorRegistry: IFormRendererRegistry,
   status: ILabStatus,
   restorer: ILayoutRestorer | null,
   palette: ICommandPalette | null,
-  jsonEditor: IJSONSettingEditorTracker | null
+  jsonEditor: IJSONSettingEditorTracker | null,
+  pluginManager: IPluginManager | null
 ): ISettingEditorTracker {
   const trans = translator.load('jupyterlab');
   const { commands, shell } = app;
@@ -103,7 +115,7 @@ function activate(
   const openUi = async (args: { query: string }) => {
     if (tracker.currentWidget && !tracker.currentWidget.isDisposed) {
       if (!tracker.currentWidget.isAttached) {
-        shell.add(tracker.currentWidget);
+        shell.add(tracker.currentWidget, 'main', { type: 'Settings' });
       }
       shell.activateById(tracker.currentWidget.id);
       return;
@@ -130,8 +142,20 @@ function activate(
       })
     });
 
+    editor.toolbar.addItem('spacer', Toolbar.createSpacerItem());
+    if (pluginManager) {
+      editor.toolbar.addItem(
+        'open-plugin-manager',
+        new ToolbarButton({
+          onClick: async () => {
+            await pluginManager.open();
+          },
+          icon: launchIcon,
+          label: trans.__('Plugin Manager')
+        })
+      );
+    }
     if (jsonEditor) {
-      editor.toolbar.addItem('spacer', Toolbar.createSpacerItem());
       editor.toolbar.addItem(
         'open-json-editor',
         new CommandToolbarButton({
@@ -149,7 +173,7 @@ function activate(
     editor.title.closable = true;
 
     void tracker.add(editor);
-    shell.add(editor);
+    shell.add(editor, 'main', { type: 'Settings' });
   };
 
   commands.addCommand(CommandIDs.open, {
@@ -174,7 +198,7 @@ function activate(
       if (args.label) {
         return args.label as string;
       }
-      return trans.__('Advanced Settings Editor');
+      return trans.__('Settings Editor');
     }
   });
 
@@ -194,6 +218,7 @@ function activate(
  */
 const jsonPlugin: JupyterFrontEndPlugin<IJSONSettingEditorTracker> = {
   id: '@jupyterlab/settingeditor-extension:plugin',
+  description: 'Adds the JSON settings editor and provides its tracker.',
   requires: [
     ISettingRegistry,
     IEditorServices,
@@ -244,7 +269,9 @@ function activateJSON(
     execute: async () => {
       if (tracker.currentWidget && !tracker.currentWidget.isDisposed) {
         if (!tracker.currentWidget.isAttached) {
-          shell.add(tracker.currentWidget);
+          shell.add(tracker.currentWidget, 'main', {
+            type: 'Advanced Settings'
+          });
         }
         shell.activateById(tracker.currentWidget.id);
         return;
@@ -303,9 +330,9 @@ function activateJSON(
       container.title.closable = true;
 
       void tracker.add(container);
-      shell.add(container);
+      shell.add(container, 'main', { type: 'Advanced Settings' });
     },
-    label: trans.__('Advanced JSON Settings Editor')
+    label: trans.__('Advanced Settings Editor')
   });
   if (palette) {
     palette.addItem({

@@ -1,9 +1,19 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 .. _installation:
 
 Installation
 ============
 
 JupyterLab can be installed using ``conda``, ``mamba``, ``pip``, ``pipenv`` or ``docker``.
+
+.. warning::
+    New versions of JupyterLab may break backwards compatibility with extensions and other
+    Jupyter customizations. As noted in :ref:`versioning_notes`, JupyterLab development and
+    release cycles follow semantic versioning, so we recommend planning your installation and
+    upgrade procedures to account for possible breaking changes that may disrupt your usage
+    of JupyterLab and any related tools that are critical to your workflows.
 
 conda
 -----
@@ -37,7 +47,7 @@ instead of ``pip``.
 
 If installing using ``pip install --user``, you must add the user-level
 ``bin`` directory to your ``PATH`` environment variable in order to launch
-``jupyter lab``. If you are using a Unix derivative (FreeBSD, GNU/Linux, 
+``jupyter lab``. If you are using a Unix derivative (FreeBSD, GNU/Linux,
 macOS), you can do this by running ``export PATH="$HOME/.local/bin:$PATH"``.
 
 pipenv
@@ -64,8 +74,8 @@ For example, in the directory where ``pipenv``'s ``Pipfile`` and ``Pipfile.lock`
 
     pipenv shell
     jupyter lab
-    
-Alternatively, you can run ``jupyter lab`` inside the virtualenv with 
+
+Alternatively, you can run ``jupyter lab`` inside the virtualenv with
 
 .. code:: bash
 
@@ -104,22 +114,6 @@ minimum versions listed above.  IE 11+ or Edge 14 do not support
 CSS Variables, and are not directly supported at this time.
 A tool like `postcss <https://postcss.org/>`__ can be used to convert the CSS files in the
 ``jupyterlab/build`` directory manually if desired.
-
-Usage with private NPM registry
--------------------------------
-
-To install some extensions, you will need access to an NPM packages registry. Some companies do not allow
-reaching directly public registry and have a private registry. To use it, you need to configure ``npm``
-**and** ``yarn`` to point to that registry (ask your corporate IT department for the correct URL):
-
-.. code::
-
-    npm config set registry https://registry.company.com/
-    yarn config set registry https://registry.company.com/
-    
-JupyterLab will pick up that registry automatically. You can check which registry URL is used by JupyterLab by running::
-
-    python -c "from jupyterlab.commands import AppOptions; print(AppOptions().registry)"
 
 Installation problems
 ---------------------
@@ -177,7 +171,7 @@ which means SSL communication will not be required for downloading Python librar
     pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org pandas
 
 
-Using the tips from above, you can handle many network problems 
+Using the tips from above, you can handle many network problems
 related to installing Python libraries.
 
 Many Jupyter extensions require having working ``npm`` and ``jlpm`` (alias for ``yarn``) commands,

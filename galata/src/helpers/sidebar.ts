@@ -1,21 +1,21 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { ISettingRegistry } from '@jupyterlab/settingregistry';
+import type { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { ElementHandle, Page } from '@playwright/test';
-import {
-  IPluginNameToInterfaceMap,
-  PLUGIN_ID_SETTINGS
-} from '../inpage/tokens';
-import { MenuHelper } from './menu';
-import * as Utils from '../utils';
+import type { IPluginNameToInterfaceMap } from '../extension';
 import { galata } from '../galata';
+import * as Utils from '../utils';
+import { MenuHelper } from './menu';
 
 /**
  * Sidebar helpers
  */
 export class SidebarHelper {
-  constructor(readonly page: Page, readonly menu: MenuHelper) {}
+  constructor(
+    readonly page: Page,
+    readonly menu: MenuHelper
+  ) {}
 
   /**
    * Whether a sidebar is opened or not
@@ -137,21 +137,31 @@ export class SidebarHelper {
   async moveAllTabsToLeft(): Promise<void> {
     await this.page.evaluate(
       async ({ pluginId }) => {
-        const settingRegistry = (await window.galataip.getPlugin(
+        const settingRegistry = (await window.galata.getPlugin(
           pluginId
         )) as ISettingRegistry;
-        const SIDEBAR_ID = '@jupyterlab/application-extension:sidebar';
-        const overrides = ((await settingRegistry.get(SIDEBAR_ID, 'overrides'))
-          .composite as any) as { [index: string]: any };
-        for (const widgetId of Object.keys(overrides)) {
-          overrides[widgetId] = 'left';
-        }
-        // default location of the property inspector and debugger is right, move it to left during tests
-        overrides['jp-property-inspector'] = 'left';
-        overrides['jp-debugger-sidebar'] = 'left';
-        await settingRegistry.set(SIDEBAR_ID, 'overrides', overrides as any);
+        const SHELL_ID = '@jupyterlab/application-extension:shell';
+        const sidebars = {
+          Debugger: 'left',
+          'Property Inspector': 'left',
+          'Extension Manager': 'left',
+          'File Browser': 'left',
+          'Sessions and Tabs': 'left',
+          'Table of Contents': 'left'
+        };
+        const currentLayout = (await settingRegistry.get(
+          SHELL_ID,
+          'layout'
+        )) as any;
+        await settingRegistry.set(SHELL_ID, 'layout', {
+          single: { ...currentLayout.single, ...sidebars },
+          multiple: { ...currentLayout.multiple, ...sidebars }
+        });
       },
-      { pluginId: PLUGIN_ID_SETTINGS as keyof IPluginNameToInterfaceMap }
+      {
+        pluginId:
+          '@jupyterlab/apputils-extension:settings' as keyof IPluginNameToInterfaceMap
+      }
     );
 
     await this.page.waitForFunction(() => {
@@ -201,8 +211,20 @@ export class SidebarHelper {
     side: galata.SidebarPosition = 'left'
   ): Promise<ElementHandle<Element> | null> {
     return await this.page.$(
-      `#jp-${side}-stack .p-StackedPanel-child:not(.lm-mod-hidden)`
+      `#jp-${side}-stack .lm-StackedPanel-child:not(.lm-mod-hidden)`
     );
+  }
+
+  /**
+   * Get the tab bar of the sidebar
+   *
+   * @param side Position
+   * @returns Tab bar handle
+   */
+  async getTabBar(
+    side: galata.SidebarPosition = 'left'
+  ): Promise<ElementHandle<Element> | null> {
+    return await this.page.$(`.jp-SideBar.jp-mod-${side}`);
   }
 
   /**

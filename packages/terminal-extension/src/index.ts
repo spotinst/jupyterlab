@@ -18,22 +18,23 @@ import {
   WidgetTracker
 } from '@jupyterlab/apputils';
 import { ILauncher } from '@jupyterlab/launcher';
-import { IFileMenu, IMainMenu } from '@jupyterlab/mainmenu';
+import { IMainMenu } from '@jupyterlab/mainmenu';
 import { IRunningSessionManagers, IRunningSessions } from '@jupyterlab/running';
 import { Terminal, TerminalAPI } from '@jupyterlab/services';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
-import { ITerminal, ITerminalTracker } from '@jupyterlab/terminal';
-// Name-only import so as to not trigger inclusion in main bundle
-import * as WidgetModuleType from '@jupyterlab/terminal/lib/widget';
+import {
+  ITerminal,
+  ITerminalTracker,
+  Terminal as XTerm
+} from '@jupyterlab/terminal';
 import { ITranslator } from '@jupyterlab/translation';
-import { toArray } from '@lumino/algorithm';
 import {
   copyIcon,
   pasteIcon,
   refreshIcon,
   terminalIcon
 } from '@jupyterlab/ui-components';
-import { Menu } from '@lumino/widgets';
+import { Menu, Widget } from '@lumino/widgets';
 
 /**
  * The command IDs used by the terminal plugin.
@@ -54,6 +55,8 @@ namespace CommandIDs {
   export const paste = 'terminal:paste';
 
   export const setTheme = 'terminal:set-theme';
+
+  export const shutdown = 'terminal:shut-down';
 }
 
 /**
@@ -62,6 +65,7 @@ namespace CommandIDs {
 const plugin: JupyterFrontEndPlugin<ITerminalTracker> = {
   activate,
   id: '@jupyterlab/terminal-extension:plugin',
+  description: 'Adds terminal and provides its tracker.',
   provides: ITerminalTracker,
   requires: [ISettingRegistry, ITranslator],
   optional: [
@@ -224,13 +228,9 @@ function activate(
 
     // Add terminal close-and-shutdown to the file menu.
     mainMenu.fileMenu.closeAndCleaners.add({
-      tracker,
-      closeAndCleanupLabel: (n: number) => trans.__('Shutdown Terminal'),
-      closeAndCleanup: (current: MainAreaWidget<ITerminal.ITerminal>) => {
-        // The widget is automatically disposed upon session shutdown.
-        return current.content.session.shutdown();
-      }
-    } as IFileMenu.ICloseAndCleaner<MainAreaWidget<ITerminal.ITerminal>>);
+      id: CommandIDs.shutdown,
+      isEnabled: (w: Widget) => tracker.currentWidget !== null && tracker.has(w)
+    });
   }
 
   if (palette) {
@@ -292,20 +292,6 @@ function addRunningSessionManager(
   const trans = translator.load('jupyterlab');
   const manager = app.serviceManager.terminals;
 
-  managers.add({
-    name: trans.__('Terminals'),
-    running: () =>
-      toArray(manager.running()).map(model => new RunningTerminal(model)),
-    shutdownAll: () => manager.shutdownAll(),
-    refreshRunning: () => manager.refreshRunning(),
-    runningChanged: manager.runningChanged,
-    shutdownLabel: trans.__('Shut Down'),
-    shutdownAllLabel: trans.__('Shut Down All'),
-    shutdownAllConfirmationText: trans.__(
-      'Are you sure you want to permanently shut down all running terminals?'
-    )
-  });
-
   class RunningTerminal implements IRunningSessions.IRunningItem {
     constructor(model: Terminal.IModel) {
       this._model = model;
@@ -325,12 +311,26 @@ function addRunningSessionManager(
 
     private _model: Terminal.IModel;
   }
+
+  managers.add({
+    name: trans.__('Terminals'),
+    running: () =>
+      Array.from(manager.running()).map(model => new RunningTerminal(model)),
+    shutdownAll: () => manager.shutdownAll(),
+    refreshRunning: () => manager.refreshRunning(),
+    runningChanged: manager.runningChanged,
+    shutdownLabel: trans.__('Shut Down'),
+    shutdownAllLabel: trans.__('Shut Down All'),
+    shutdownAllConfirmationText: trans.__(
+      'Are you sure you want to permanently shut down all running terminals?'
+    )
+  });
 }
 
 /**
  * Add the commands for the terminal.
  */
-export function addCommands(
+function addCommands(
   app: JupyterFrontEnd,
   tracker: WidgetTracker<MainAreaWidget<ITerminal.ITerminal>>,
   settingRegistry: ISettingRegistry,
@@ -351,17 +351,11 @@ export function addCommands(
     caption: trans.__('Start a new terminal session'),
     icon: args => (args['isPalette'] ? undefined : terminalIcon),
     execute: async args => {
-      // wait for the widget to lazy load
-      let Terminal: typeof WidgetModuleType.Terminal;
-      try {
-        Terminal = (await Private.ensureWidget()).Terminal;
-      } catch (err) {
-        Private.showErrorMessage(err);
-        return;
-      }
-
       const name = args['name'] as string;
       const cwd = args['cwd'] as string;
+      const localPath = cwd
+        ? serviceManager.contents.localPath(cwd)
+        : undefined;
 
       let session;
       if (name) {
@@ -373,21 +367,24 @@ export function addCommands(
         } else {
           // we are restoring a terminal widget but the corresponding terminal was closed
           // let's start a new terminal with the original name
-          session = await serviceManager.terminals.startNew({ name, cwd });
+          session = await serviceManager.terminals.startNew({
+            name,
+            cwd: localPath
+          });
         }
       } else {
         // we are creating a new terminal widget with a new terminal
         // let the server choose the terminal name
-        session = await serviceManager.terminals.startNew({ cwd });
+        session = await serviceManager.terminals.startNew({ cwd: localPath });
       }
 
-      const term = new Terminal(session, options, translator);
+      const term = new XTerm(session, options, translator);
 
       term.title.icon = terminalIcon;
       term.title.label = '...';
 
-      const main = new MainAreaWidget({ content: term });
-      app.shell.add(main);
+      const main = new MainAreaWidget({ content: term, reveal: term.ready });
+      app.shell.add(main, 'main', { type: 'Terminal' });
       void tracker.add(main);
       app.shell.activateById(main.id);
       return main;
@@ -395,6 +392,7 @@ export function addCommands(
   });
 
   commands.addCommand(CommandIDs.open, {
+    label: trans.__('Open a terminal by its `name`.'),
     execute: args => {
       const name = args['name'] as string;
       // Check for a running terminal with the given name.
@@ -447,7 +445,7 @@ export function addCommands(
         return;
       }
 
-      const text = widget.getSelection!();
+      const text = widget.getSelection();
 
       if (text) {
         Clipboard.copyToSystem(text);
@@ -464,12 +462,8 @@ export function addCommands(
         return false;
       }
 
-      if (!widget.hasSelection) {
-        return false;
-      }
-
       // Enable command if there is a text selection in the terminal
-      return widget.hasSelection!();
+      return widget.hasSelection();
     },
     icon: copyIcon.bindprops({ stylesheet: 'menuItem' }),
     label: trans.__('Copy')
@@ -492,24 +486,26 @@ export function addCommands(
 
       if (clipboardData) {
         // Paste data to the terminal
-        widget.paste!(clipboardData);
+        widget.paste(clipboardData);
       }
     },
-    isEnabled: () => {
-      const widget = tracker.currentWidget?.content;
-
-      if (!widget) {
-        return false;
-      }
-
-      if (!widget.paste) {
-        return false;
-      }
-
-      return isEnabled();
-    },
+    isEnabled: () => Boolean(isEnabled() && tracker.currentWidget?.content),
     icon: pasteIcon.bindprops({ stylesheet: 'menuItem' }),
     label: trans.__('Paste')
+  });
+
+  commands.addCommand(CommandIDs.shutdown, {
+    label: trans.__('Shutdown Terminal'),
+    execute: () => {
+      const current = tracker.currentWidget;
+      if (!current) {
+        return;
+      }
+
+      // The widget is automatically disposed upon session shutdown.
+      return current.content.session.shutdown();
+    },
+    isEnabled
   });
 
   commands.addCommand(CommandIDs.increaseFont, {
@@ -548,6 +544,9 @@ export function addCommands(
 
   commands.addCommand(CommandIDs.setTheme, {
     label: args => {
+      if (args.theme === undefined) {
+        return trans.__('Set terminal theme to the provided `theme`.');
+      }
       const theme = args['theme'] as string;
       const displayName =
         theme in themeDisplayedName
@@ -579,24 +578,6 @@ export function addCommands(
  * A namespace for private data.
  */
 namespace Private {
-  /**
-   * A Promise for the initial load of the terminal widget.
-   */
-  export let widgetReady: Promise<typeof WidgetModuleType>;
-
-  /**
-   * Lazy-load the widget (and xterm library and addons)
-   */
-  export function ensureWidget(): Promise<typeof WidgetModuleType> {
-    if (widgetReady) {
-      return widgetReady;
-    }
-
-    widgetReady = import('@jupyterlab/terminal/lib/widget');
-
-    return widgetReady;
-  }
-
   /**
    *  Utility function for consistent error reporting
    */

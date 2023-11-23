@@ -2,20 +2,19 @@
 // Distributed under the terms of the Modified BSD License.
 
 import { ISessionContext, SessionContext } from '@jupyterlab/apputils';
+import { createSessionContext } from '@jupyterlab/apputils/lib/testutils';
 import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
-import { createSessionContext } from '@jupyterlab/testutils';
-import { JupyterServer } from '@jupyterlab/testutils/lib/start_jupyter_server';
+import { JupyterServer } from '@jupyterlab/testing';
 import {
   ExecutionIndicator,
   ExecutionIndicatorComponent,
   Notebook,
   NotebookActions,
   NotebookModel
-} from '..';
-import * as utils from './utils';
+} from '@jupyterlab/notebook';
 import React from 'react';
 import ReactDOMServer from 'react-dom/server';
-import { PromiseDelegate } from '@lumino/coreutils';
+import * as utils from './utils';
 
 const fastCellModel = {
   cell_type: 'code',
@@ -30,7 +29,7 @@ const slowCellModel = {
   execution_count: 1,
   metadata: { tags: [] },
   outputs: [],
-  source: ['import time\n', 'time.sleep(3)\n']
+  source: ['import time\n', 'time.sleep(3.05)\n']
 };
 
 const killerCellModel = {
@@ -44,9 +43,8 @@ const killerCellModel = {
 const server = new JupyterServer();
 
 beforeAll(async () => {
-  jest.setTimeout(20000);
   await server.start();
-});
+}, 30000);
 
 afterAll(async () => {
   await server.shutdown();
@@ -87,7 +85,11 @@ describe('@jupyterlab/notebook', () => {
       widget = new Notebook({
         rendermime,
         contentFactory: utils.createNotebookFactory(),
-        mimeTypeService: utils.mimeTypeService
+        mimeTypeService: utils.mimeTypeService,
+        notebookConfig: {
+          ...Notebook.defaultNotebookConfig,
+          windowingMode: 'none'
+        }
       });
       const model = new NotebookModel();
       const modelJson = {
@@ -113,8 +115,10 @@ describe('@jupyterlab/notebook', () => {
     });
 
     afterEach(() => {
+      widget.model?.dispose();
       widget.dispose();
       utils.clipboard.clear();
+      indicator.model.dispose();
       indicator.dispose();
     });
 
@@ -130,8 +134,7 @@ describe('@jupyterlab/notebook', () => {
         let scheduledCell: number | undefined = 0;
 
         indicator.model.stateChanged.connect(state => {
-          scheduledCell =
-            state.executionState(widget)?.scheduledCellNumber ?? 0;
+          scheduledCell = state.executionState(widget)!.scheduledCellNumber;
         });
 
         await NotebookActions.run(widget, ipySessionContext);
@@ -142,15 +145,10 @@ describe('@jupyterlab/notebook', () => {
         let elapsedTime: number | undefined = 0;
 
         indicator.model.stateChanged.connect(state => {
-          elapsedTime = state.executionState(widget)?.totalTime ?? 0;
+          elapsedTime = state.executionState(widget)!.totalTime;
         });
 
         await NotebookActions.run(widget, ipySessionContext);
-        const delegate = new PromiseDelegate<void>();
-        setTimeout(() => {
-          delegate.resolve();
-        }, 150);
-        await delegate.promise;
         expect(elapsedTime).toBeGreaterThanOrEqual(6);
       });
 
@@ -158,18 +156,10 @@ describe('@jupyterlab/notebook', () => {
         let tick: Array<number> = [];
 
         indicator.model.stateChanged.connect(state => {
-          const indicatorState = state.executionState(widget);
-          if (indicatorState) {
-            tick.push(indicatorState.totalTime);
-          }
+          tick.push(state.executionState(widget)!.totalTime);
         });
 
         await NotebookActions.run(widget, ipySessionContext);
-        const delegate = new PromiseDelegate<void>();
-        setTimeout(() => {
-          delegate.resolve();
-        }, 150);
-        await delegate.promise;
         expect(tick).toEqual(expect.arrayContaining([1, 2, 3, 4, 5, 6, 6]));
       });
 
@@ -257,7 +247,7 @@ describe('@jupyterlab/notebook', () => {
         />
       );
       const htmlElement = ReactDOMServer.renderToString(element);
-      expect(htmlElement).toContain('<div data-reactroot=""></div>');
+      expect(htmlElement).toContain('<div></div>');
     });
     it('Should render a filled circle with 0/2 cell executed message', () => {
       defaultState.scheduledCellNumber = 2;

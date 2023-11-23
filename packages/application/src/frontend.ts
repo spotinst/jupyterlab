@@ -5,7 +5,6 @@ import { CommandLinker } from '@jupyterlab/apputils';
 import { DocumentRegistry } from '@jupyterlab/docregistry';
 import { ServiceManager } from '@jupyterlab/services';
 import { ContextMenuSvg } from '@jupyterlab/ui-components';
-import { IIterator } from '@lumino/algorithm';
 import { Application, IPlugin } from '@lumino/application';
 import { Token } from '@lumino/coreutils';
 import { ISignal, Signal } from '@lumino/signaling';
@@ -109,7 +108,7 @@ export abstract class JupyterFrontEnd<
   /**
    * The service manager used by the application.
    */
-  readonly serviceManager: ServiceManager;
+  readonly serviceManager: ServiceManager.IManager;
 
   /**
    * The application form factor, e.g., `desktop` or `mobile`.
@@ -231,7 +230,7 @@ export namespace JupyterFrontEnd {
     /**
      * The service manager used by the application.
      */
-    serviceManager?: ServiceManager;
+    serviceManager?: ServiceManager.IManager;
 
     /**
      * Promise that resolves when state is first restored, returning layout
@@ -282,7 +281,7 @@ export namespace JupyterFrontEnd {
      *
      * @param area - Optional regions in the shell whose widgets are iterated.
      */
-    widgets(area?: string): IIterator<Widget>;
+    widgets(area?: string): IterableIterator<Widget>;
   }
 
   /**
@@ -304,7 +303,12 @@ export namespace JupyterFrontEnd {
   /**
    * The application paths dictionary token.
    */
-  export const IPaths = new Token<IPaths>('@jupyterlab/application:IPaths');
+  export const IPaths = new Token<IPaths>(
+    '@jupyterlab/application:IPaths',
+    `A service providing information about various
+  URLs and server paths for the current application. Use this service if you want to
+  assemble URLs to use the JupyterLab REST API.`
+  );
 
   /**
    * An interface for URL and directory paths used by a Jupyter front-end.
@@ -365,7 +369,8 @@ export namespace JupyterFrontEnd {
    * dependency if it is possible to make it an optional dependency.
    */
   export const ITreeResolver = new Token<ITreeResolver>(
-    '@jupyterlab/application:ITreeResolver'
+    '@jupyterlab/application:ITreeResolver',
+    'A service to resolve the tree path.'
   );
 
   /**

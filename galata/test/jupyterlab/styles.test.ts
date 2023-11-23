@@ -3,7 +3,7 @@
 
 import { expect, test } from '@jupyterlab/galata';
 
-// posssibly incomplete (as new tags get added) list of HTML tags as defined in HTML standards (including deprecated elements)
+// possibly incomplete (as new tags get added) list of HTML tags as defined in HTML standards (including deprecated elements)
 const standardHTMLTags = new Set([
   'a',
   'abbr',
@@ -146,7 +146,7 @@ test.describe('CSS Selectors', () => {
           await page.theme.setLightTheme();
           break;
         default:
-          throw new Error(`Unknown theme ${theme}`);
+          expect(false);
       }
 
       // Create a new notebook and add a MathJax 2 element to ensure that
@@ -170,13 +170,7 @@ test.describe('CSS Selectors', () => {
 
       const allTags = new Set([...standardHTMLTags, ...detectedTags]);
 
-      const selectors: string[] = await page.evaluate(() =>
-        [...document.querySelectorAll('style')]
-          .map(style => [...style.sheet.cssRules])
-          .flat()
-          .filter((rule: CSSRule) => rule instanceof CSSStyleRule)
-          .map((rule: CSSStyleRule) => rule.selectorText)
-      );
+      const selectors: string[] = await page.style.collectAllSelectors();
       const matcher = new RegExp(
         ':hover.*\\s+(' + [...allTags].join('|') + ')($|\\s)'
       );
@@ -186,14 +180,6 @@ test.describe('CSS Selectors', () => {
       for (const selectorGroup of selectors) {
         for (const selector of selectorGroup.split(',')) {
           if (selector.match(matcher)) {
-            if (
-              selector.includes('.bp3-control') ||
-              selector.includes('.bp3-interactive')
-            ) {
-              // Ignore problematic Blueprint styles on 3.4.x - those were removed in 4.0,
-              // and are not as problematic since they only match against `input` and `td`.
-              continue;
-            }
             matchedSelectors.push(selector);
           }
         }

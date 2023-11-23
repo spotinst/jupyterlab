@@ -1,21 +1,21 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import {
-  ReactWidget,
-  showErrorMessage,
-  ToolbarButtonComponent,
-  UseSignal
-} from '@jupyterlab/apputils';
-import {
-  ITranslator,
-  nullTranslator,
-  TranslationBundle
-} from '@jupyterlab/translation';
 import React from 'react';
+
 import { openKernelSourceIcon } from '../../icons';
-import { IDebugger } from '../../tokens';
+
+import { classes, LabIcon, ReactWidget } from '@jupyterlab/ui-components';
+
+import { showErrorMessage } from '@jupyterlab/apputils';
+
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+
 import { KernelSourcesFilter } from './filter';
+
+import { IDebugger } from '../../tokens';
+import { UseSignal } from '@jupyterlab/ui-components';
+import { IRenderMime } from '@jupyterlab/rendermime';
 
 /**
  * The class name added to the filterbox node.
@@ -26,6 +26,11 @@ const FILTERBOX_CLASS = 'jp-DebuggerKernelSource-filterBox';
  * The class name added to hide the filterbox node.
  */
 const FILTERBOX_HIDDEN_CLASS = 'jp-DebuggerKernelSource-filterBox-hidden';
+
+/**
+ * The class for each source row.
+ */
+const SOURCE_CLASS = 'jp-DebuggerKernelSource-source';
 
 /**
  * The body for a Sources Panel.
@@ -45,7 +50,7 @@ export class KernelSourcesBody extends ReactWidget {
     this.addClass('jp-DebuggerKernelSources-body');
   }
 
-  render(): JSX.Element {
+  render() {
     let filterClass = FILTERBOX_CLASS;
     if (!this._showFilter) {
       filterClass += ' ' + FILTERBOX_HIDDEN_CLASS;
@@ -63,12 +68,11 @@ export class KernelSourcesBody extends ReactWidget {
               const path = module.path;
               const key =
                 name + (keymap[name] = (keymap[name] ?? 0) + 1).toString();
-              const button = (
-                <ToolbarButtonComponent
+              return (
+                <div
                   key={key}
-                  icon={openKernelSourceIcon}
-                  label={name}
-                  tooltip={path}
+                  title={path}
+                  className={SOURCE_CLASS}
                   onClick={() => {
                     this._debuggerService
                       .getSource({
@@ -89,9 +93,15 @@ export class KernelSourcesBody extends ReactWidget {
                         );
                       });
                   }}
-                />
+                >
+                  <LabIcon.resolveReact
+                    icon={openKernelSourceIcon}
+                    iconClass={classes('jp-Icon')}
+                    tag={null}
+                  />
+                  {name}
+                </div>
               );
-              return button;
             });
           }}
         </UseSignal>
@@ -109,7 +119,7 @@ export class KernelSourcesBody extends ReactWidget {
 
   private _model: IDebugger.Model.IKernelSources;
   private _debuggerService: IDebugger;
-  private _trans: TranslationBundle;
+  private _trans: IRenderMime.TranslationBundle;
   private _showFilter = false;
 }
 

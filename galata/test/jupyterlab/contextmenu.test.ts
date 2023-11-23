@@ -15,8 +15,8 @@ test.use({
 });
 
 test.describe('Application Context Menu', () => {
-  test.beforeAll(async ({ baseURL, request, tmpPath }) => {
-    const contents = galata.newContentsHelper(baseURL, undefined, request);
+  test.beforeAll(async ({ request, tmpPath }) => {
+    const contents = galata.newContentsHelper(request);
 
     // Create some dummy content
     await contents.uploadFile(
@@ -42,8 +42,8 @@ test.describe('Application Context Menu', () => {
     await page.filebrowser.openHomeDirectory();
   });
 
-  test.afterAll(async ({ baseURL, request, tmpPath }) => {
-    const contents = galata.newContentsHelper(baseURL, undefined, request);
+  test.afterAll(async ({ request, tmpPath }) => {
+    const contents = galata.newContentsHelper(request);
     await contents.deleteDirectory(tmpPath);
   });
 
@@ -110,7 +110,9 @@ test.describe('Application Context Menu', () => {
     expect(await page.menu.isAnyOpen()).toBe(true);
 
     await page.hover('text=Open With');
-    await page.waitForSelector('li[role="menuitem"]:has-text("Editor")');
+    await page.waitForSelector(
+      '.lm-Menu li[role="menuitem"]:has-text("Editor")'
+    );
 
     const imageName = `file-openwith.png`;
     // Get the last menu -> will be submenu

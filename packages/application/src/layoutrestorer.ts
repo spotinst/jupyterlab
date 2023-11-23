@@ -23,7 +23,8 @@ import { ILabShell } from './shell';
  * The layout restorer token.
  */
 export const ILayoutRestorer = new Token<ILayoutRestorer>(
-  '@jupyterlab/application:ILayoutRestorer'
+  '@jupyterlab/application:ILayoutRestorer',
+  'A service providing application layout restoration functionality. Use this to have your activities restored across page loads.'
 );
 
 /**
@@ -176,6 +177,7 @@ export class LayoutRestorer implements ILayoutRestorer {
       downArea: null,
       leftArea: null,
       rightArea: null,
+      topArea: null,
       relativeSizes: null
     };
     const layout = this._connector.fetch(KEY);
@@ -187,13 +189,8 @@ export class LayoutRestorer implements ILayoutRestorer {
         return blank;
       }
 
-      const {
-        main,
-        down,
-        left,
-        right,
-        relativeSizes
-      } = data as Private.ILayout;
+      const { main, down, left, right, relativeSizes, top } =
+        data as Private.ILayout;
 
       // If any data exists, then this is not a fresh session.
       const fresh = false;
@@ -221,7 +218,8 @@ export class LayoutRestorer implements ILayoutRestorer {
         downArea,
         leftArea,
         rightArea,
-        relativeSizes: relativeSizes || null
+        relativeSizes: relativeSizes || null,
+        topArea: (top as any) ?? null
       };
     } catch (error) {
       return blank;
@@ -325,7 +323,7 @@ export class LayoutRestorer implements ILayoutRestorer {
   /**
    * Save the layout state for the application.
    */
-  save(data: ILabShell.ILayout): Promise<void> {
+  save(layout: ILabShell.ILayout): Promise<void> {
     // If there are promises that are unresolved, bail.
     if (!this._promisesDone) {
       const warning = 'save() was called prematurely.';
@@ -334,14 +332,16 @@ export class LayoutRestorer implements ILayoutRestorer {
     }
 
     const dehydrated: Private.ILayout = {};
+
     // Save the cached main area layout if restoration is deferred.
     dehydrated.main = this.isDeferred
       ? this._deferredMainArea
-      : this._dehydrateMainArea(data.mainArea);
-    dehydrated.down = this._dehydrateDownArea(data.downArea);
-    dehydrated.left = this._dehydrateSideArea(data.leftArea);
-    dehydrated.right = this._dehydrateSideArea(data.rightArea);
-    dehydrated.relativeSizes = data.relativeSizes;
+      : this._dehydrateMainArea(layout.mainArea);
+    dehydrated.down = this._dehydrateDownArea(layout.downArea);
+    dehydrated.left = this._dehydrateSideArea(layout.leftArea);
+    dehydrated.right = this._dehydrateSideArea(layout.rightArea);
+    dehydrated.relativeSizes = layout.relativeSizes;
+    dehydrated.top = { ...layout.topArea };
 
     return this._connector.save(KEY, dehydrated);
   }
@@ -359,7 +359,7 @@ export class LayoutRestorer implements ILayoutRestorer {
   }
 
   /**
-   * Reydrate a serialized main area description object.
+   * Rehydrate a serialized main area description object.
    *
    * #### Notes
    * This function consumes data that can become corrupted, so it uses type
@@ -405,7 +405,7 @@ export class LayoutRestorer implements ILayoutRestorer {
   }
 
   /**
-   * Reydrate a serialized side area description object.
+   * Rehydrate a serialized side area description object.
    *
    * #### Notes
    * This function consumes data that can become corrupted, so it uses type
@@ -446,7 +446,10 @@ export class LayoutRestorer implements ILayoutRestorer {
     if (!area) {
       return null;
     }
-    const dehydrated: Private.ISideArea = { collapsed: area.collapsed };
+    const dehydrated: Private.ISideArea = {
+      collapsed: area.collapsed,
+      visible: area.visible
+    };
     if (area.currentWidget) {
       const current = Private.nameProperty.get(area.currentWidget);
       if (current) {
@@ -458,11 +461,19 @@ export class LayoutRestorer implements ILayoutRestorer {
         .map(widget => Private.nameProperty.get(widget))
         .filter(name => !!name);
     }
+    if (area.widgetStates) {
+      dehydrated.widgetStates = area.widgetStates as {
+        [id: string]: {
+          sizes: number[] | null;
+          expansionStates: boolean[] | null;
+        };
+      };
+    }
     return dehydrated;
   }
 
   /**
-   * Reydrate a serialized side area description object.
+   * Rehydrate a serialized side area description object.
    *
    * #### Notes
    * This function consumes data that can become corrupted, so it uses type
@@ -472,7 +483,18 @@ export class LayoutRestorer implements ILayoutRestorer {
     area?: Private.ISideArea | null
   ): ILabShell.ISideArea {
     if (!area) {
-      return { collapsed: true, currentWidget: null, widgets: null };
+      return {
+        collapsed: true,
+        currentWidget: null,
+        visible: true,
+        widgets: null,
+        widgetStates: {
+          ['null']: {
+            sizes: null,
+            expansionStates: null
+          }
+        }
+      };
     }
     const internal = this._widgets;
     const collapsed = area.collapsed ?? false;
@@ -487,10 +509,18 @@ export class LayoutRestorer implements ILayoutRestorer {
             internal.has(`${name}`) ? internal.get(`${name}`) : null
           )
           .filter(widget => !!widget);
+    const widgetStates = area.widgetStates as {
+      [id: string]: {
+        sizes: number[] | null;
+        expansionStates: boolean[] | null;
+      };
+    };
     return {
       collapsed,
       currentWidget: currentWidget!,
-      widgets: widgets as Widget[] | null
+      widgets: widgets as Widget[] | null,
+      visible: area.visible ?? true,
+      widgetStates: widgetStates
     };
   }
 
@@ -586,6 +616,11 @@ namespace Private {
      * The relatives sizes of the areas of the user interface.
      */
     relativeSizes?: number[] | null;
+
+    /**
+     * The restorable description of the top area in the user interface.
+     */
+    top?: ITopArea | null;
   }
 
   /**
@@ -623,6 +658,11 @@ namespace Private {
     current?: string | null;
 
     /**
+     * A flag denoting whether the side tab bar is visible.
+     */
+    visible?: boolean | null;
+
+    /**
      * The collection of widgets held by the sidebar.
      */
     widgets?: Array<string> | null;
@@ -646,6 +686,16 @@ namespace Private {
      * The index of the selected tab.
      */
     currentIndex: number;
+  }
+
+  /**
+   * The restorable description of the top area in the user interface.
+   */
+  export interface ITopArea extends PartialJSONObject {
+    /**
+     * Top area visibility in simple mode.
+     */
+    readonly simpleVisibility?: boolean;
   }
 
   /**

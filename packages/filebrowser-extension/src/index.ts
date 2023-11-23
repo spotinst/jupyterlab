@@ -11,7 +11,8 @@ import {
   IRouter,
   ITreePathUpdater,
   JupyterFrontEnd,
-  JupyterFrontEndPlugin
+  JupyterFrontEndPlugin,
+  JupyterLab
 } from '@jupyterlab/application';
 import {
   Clipboard,
@@ -19,7 +20,6 @@ import {
   ICommandPalette,
   InputDialog,
   IToolbarWidgetRegistry,
-  MainAreaWidget,
   setToolbar,
   showErrorMessage,
   WidgetTracker
@@ -31,11 +31,11 @@ import {
   FileBrowser,
   FileUploadStatus,
   FilterFileBrowserModel,
+  IDefaultFileBrowser,
   IFileBrowserCommands,
   IFileBrowserFactory,
   Uploader
 } from '@jupyterlab/filebrowser';
-import { Launcher } from '@jupyterlab/launcher';
 import { Contents } from '@jupyterlab/services';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { IStateDB } from '@jupyterlab/statedb';
@@ -49,8 +49,10 @@ import {
   downloadIcon,
   editIcon,
   fileIcon,
+  FilenameSearcher,
   folderIcon,
   IDisposableMenuItem,
+  IScore,
   linkIcon,
   markdownIcon,
   newFolderIcon,
@@ -60,12 +62,17 @@ import {
   stopIcon,
   textEditorIcon
 } from '@jupyterlab/ui-components';
-import { find, IIterator, map, reduce, toArray } from '@lumino/algorithm';
+import { find, map } from '@lumino/algorithm';
 import { CommandRegistry } from '@lumino/commands';
 import { ContextMenu } from '@lumino/widgets';
-import { JSONObject } from '@lumino/coreutils';
 
 const FILE_BROWSER_FACTORY = 'FileBrowser';
+const FILE_BROWSER_PLUGIN_ID = '@jupyterlab/filebrowser-extension:browser';
+
+/**
+ * The class name added to the filebrowser filterbox node.
+ */
+const FILTERBOX_CLASS = 'jp-FileBrowser-filterBox';
 
 /**
  * The command IDs used by the file browser plugin.
@@ -74,9 +81,6 @@ namespace CommandIDs {
   export const copy = 'filebrowser:copy';
 
   export const copyDownloadLink = 'filebrowser:copy-download-link';
-
-  // For main browser only.
-  export const createLauncher = 'filebrowser:create-main-launcher';
 
   export const cut = 'filebrowser:cut';
 
@@ -131,9 +135,18 @@ namespace CommandIDs {
 
   export const toggleLastModified = 'filebrowser:toggle-last-modified';
 
+  export const toggleShowFullPath = 'filebrowser:toggle-show-full-path';
+
+  export const toggleFileSize = 'filebrowser:toggle-file-size';
+
+  export const toggleSortNotebooksFirst =
+    'filebrowser:toggle-sort-notebooks-first';
+
   export const search = 'filebrowser:search';
 
   export const toggleHiddenFiles = 'filebrowser:toggle-hidden-files';
+
+  export const toggleFileCheckboxes = 'filebrowser:toggle-file-checkboxes';
 }
 
 /**
@@ -145,8 +158,9 @@ const namespace = 'filebrowser';
  * The default file browser extension.
  */
 const browser: JupyterFrontEndPlugin<void> = {
-  id: '@jupyterlab/filebrowser-extension:browser',
-  requires: [IFileBrowserFactory, ITranslator],
+  id: FILE_BROWSER_PLUGIN_ID,
+  description: 'Set up the default file browser (commands, settings,...).',
+  requires: [IDefaultFileBrowser, IFileBrowserFactory, ITranslator],
   optional: [
     ILayoutRestorer,
     ISettingRegistry,
@@ -157,6 +171,7 @@ const browser: JupyterFrontEndPlugin<void> = {
   autoStart: true,
   activate: async (
     app: JupyterFrontEnd,
+    defaultFileBrowser: IDefaultFileBrowser,
     factory: IFileBrowserFactory,
     translator: ITranslator,
     restorer: ILayoutRestorer | null,
@@ -164,8 +179,7 @@ const browser: JupyterFrontEndPlugin<void> = {
     treePathUpdater: ITreePathUpdater | null,
     commandPalette: ICommandPalette | null
   ): Promise<void> => {
-    const trans = translator.load('jupyterlab');
-    const browser = factory.defaultBrowser;
+    const browser = defaultFileBrowser;
 
     // Let the application restorer track the primary file browser (that is
     // automatically created) for restoration of application state (e.g. setting
@@ -183,25 +197,14 @@ const browser: JupyterFrontEndPlugin<void> = {
       await browser.model.cd(preferredPath);
     }
 
-    addCommands(app, factory, translator, settingRegistry, commandPalette);
-
-    // Show the current file browser shortcut in its title.
-    const updateBrowserTitle = () => {
-      const binding = find(
-        app.commands.keyBindings,
-        b => b.command === CommandIDs.toggleBrowser
-      );
-      if (binding) {
-        const ks = binding.keys.map(CommandRegistry.formatKeystroke).join(', ');
-        browser.title.caption = trans.__('File Browser (%1)', ks);
-      } else {
-        browser.title.caption = trans.__('File Browser');
-      }
-    };
-    updateBrowserTitle();
-    app.commands.keyBindingChanged.connect(() => {
-      updateBrowserTitle();
-    });
+    addCommands(
+      app,
+      browser,
+      factory,
+      translator,
+      settingRegistry,
+      commandPalette
+    );
 
     return void Promise.all([app.restored, browser.model.restored]).then(() => {
       if (treePathUpdater) {
@@ -211,41 +214,41 @@ const browser: JupyterFrontEndPlugin<void> = {
       }
 
       if (settingRegistry) {
-        void settingRegistry
-          .load('@jupyterlab/filebrowser-extension:browser')
-          .then(settings => {
-            /**
-             * File browser configuration.
-             */
-            const fileBrowserConfig = {
-              navigateToCurrentDirectory: false,
-              showLastModifiedColumn: true,
-              useFuzzyFilter: true,
-              showHiddenFiles: false
-            };
-            const fileBrowserModelConfig = {
-              filterDirectories: true
-            };
+        void settingRegistry.load(FILE_BROWSER_PLUGIN_ID).then(settings => {
+          /**
+           * File browser configuration.
+           */
+          const fileBrowserConfig = {
+            navigateToCurrentDirectory: false,
+            showLastModifiedColumn: true,
+            showFileSizeColumn: false,
+            showHiddenFiles: false,
+            showFileCheckboxes: false,
+            sortNotebooksFirst: false,
+            showFullPath: false
+          };
+          const fileBrowserModelConfig = {
+            filterDirectories: true
+          };
 
-            function onSettingsChanged(
-              settings: ISettingRegistry.ISettings
-            ): void {
-              for (const key in fileBrowserConfig) {
-                const value = settings.get(key).composite as boolean;
-                fileBrowserConfig[
-                  key as keyof typeof fileBrowserConfig
-                ] = value;
-                browser[key as keyof typeof fileBrowserConfig] = value;
-              }
-
-              const value = settings.get('filterDirectories')
-                .composite as boolean;
-              fileBrowserModelConfig.filterDirectories = value;
-              browser.model.filterDirectories = value;
+          function onSettingsChanged(
+            settings: ISettingRegistry.ISettings
+          ): void {
+            let key: keyof typeof fileBrowserConfig;
+            for (key in fileBrowserConfig) {
+              const value = settings.get(key).composite as boolean;
+              fileBrowserConfig[key] = value;
+              browser[key] = value;
             }
-            settings.changed.connect(onSettingsChanged);
-            onSettingsChanged(settings);
-          });
+
+            const value = settings.get('filterDirectories')
+              .composite as boolean;
+            fileBrowserModelConfig.filterDirectories = value;
+            browser.model.filterDirectories = value;
+          }
+          settings.changed.connect(onSettingsChanged);
+          onSettingsChanged(settings);
+        });
       }
     });
   }
@@ -256,19 +259,17 @@ const browser: JupyterFrontEndPlugin<void> = {
  */
 const factory: JupyterFrontEndPlugin<IFileBrowserFactory> = {
   id: '@jupyterlab/filebrowser-extension:factory',
+  description: 'Provides the file browser factory.',
   provides: IFileBrowserFactory,
   requires: [IDocumentManager, ITranslator],
-  optional: [IStateDB, IRouter, JupyterFrontEnd.ITreeResolver, ILabShell],
+  optional: [IStateDB, JupyterLab.IInfo],
   activate: async (
     app: JupyterFrontEnd,
     docManager: IDocumentManager,
     translator: ITranslator,
     state: IStateDB | null,
-    router: IRouter | null,
-    tree: JupyterFrontEnd.ITreeResolver | null,
-    labShell: ILabShell | null
+    info: JupyterLab.IInfo | null
   ): Promise<IFileBrowserFactory> => {
-    const { commands } = app;
     const tracker = new WidgetTracker<FileBrowser>({ namespace });
     const createFileBrowser = (
       id: string,
@@ -280,6 +281,12 @@ const factory: JupyterFrontEndPlugin<IFileBrowserFactory> = {
         manager: docManager,
         driveName: options.driveName || '',
         refreshInterval: options.refreshInterval,
+        refreshStandby: () => {
+          if (info) {
+            return !info.isConnected || 'when-hidden';
+          }
+          return 'when-hidden';
+        },
         state:
           options.state === null
             ? undefined
@@ -294,8 +301,30 @@ const factory: JupyterFrontEndPlugin<IFileBrowserFactory> = {
       return widget;
     };
 
+    return { createFileBrowser, tracker };
+  }
+};
+
+/**
+ * The default file browser factory provider.
+ */
+const defaultFileBrowser: JupyterFrontEndPlugin<IDefaultFileBrowser> = {
+  id: '@jupyterlab/filebrowser-extension:default-file-browser',
+  description: 'Provides the default file browser',
+  provides: IDefaultFileBrowser,
+  requires: [IFileBrowserFactory],
+  optional: [IRouter, JupyterFrontEnd.ITreeResolver, ILabShell],
+  activate: async (
+    app: JupyterFrontEnd,
+    fileBrowserFactory: IFileBrowserFactory,
+    router: IRouter | null,
+    tree: JupyterFrontEnd.ITreeResolver | null,
+    labShell: ILabShell | null
+  ): Promise<IDefaultFileBrowser> => {
+    const { commands } = app;
+
     // Manually restore and load the default file browser.
-    const defaultBrowser = createFileBrowser('filebrowser', {
+    const defaultBrowser = fileBrowserFactory.createFileBrowser('filebrowser', {
       auto: false,
       restore: false
     });
@@ -307,7 +336,7 @@ const factory: JupyterFrontEndPlugin<IFileBrowserFactory> = {
       app,
       labShell
     );
-    return { createFileBrowser, defaultBrowser, tracker };
+    return defaultBrowser;
   }
 };
 
@@ -320,6 +349,8 @@ const factory: JupyterFrontEndPlugin<IFileBrowserFactory> = {
  */
 const downloadPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:download',
+  description:
+    'Adds the download file commands. Disabling this plugin will NOT disable downloading files from the server, if the user enters the appropriate download URLs.',
   requires: [IFileBrowserFactory, ITranslator],
   autoStart: true,
   activate: (
@@ -351,11 +382,16 @@ const downloadPlugin: JupyterFrontEndPlugin<void> = {
         }
 
         return widget.model.manager.services.contents
-          .getDownloadUrl(widget.selectedItems().next()!.path)
+          .getDownloadUrl(widget.selectedItems().next()!.value.path)
           .then(url => {
             Clipboard.copyToSystem(url);
           });
       },
+      isVisible: () =>
+        // So long as this command only handles one file at time, don't show it
+        // if multiple files are selected.
+        !!tracker.currentWidget &&
+        Array.from(tracker.currentWidget.selectedItems()).length === 1,
       icon: copyIcon.bindprops({ stylesheet: 'menuItem' }),
       label: trans.__('Copy Download Link'),
       mnemonic: 0
@@ -368,8 +404,10 @@ const downloadPlugin: JupyterFrontEndPlugin<void> = {
  */
 const browserWidget: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:widget',
+  description: 'Adds the file browser to the application shell.',
   requires: [
     IDocumentManager,
+    IDefaultFileBrowser,
     IFileBrowserFactory,
     ISettingRegistry,
     IToolbarWidgetRegistry,
@@ -377,18 +415,23 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
     ILabShell,
     IFileBrowserCommands
   ],
+  optional: [ICommandPalette],
   autoStart: true,
   activate: (
     app: JupyterFrontEnd,
     docManager: IDocumentManager,
+    browser: IDefaultFileBrowser,
     factory: IFileBrowserFactory,
-    settings: ISettingRegistry,
+    settingRegistry: ISettingRegistry,
     toolbarRegistry: IToolbarWidgetRegistry,
     translator: ITranslator,
-    labShell: ILabShell
+    labShell: ILabShell,
+    // Wait until file browser commands are ready before activating file browser widget
+    fileBrowserCommands: null,
+    commandPalette: ICommandPalette | null
   ): void => {
     const { commands } = app;
-    const { defaultBrowser: browser, tracker } = factory;
+    const { tracker } = factory;
     const trans = translator.load('jupyterlab');
 
     // Set attributes when adding the browser to the UI
@@ -396,31 +439,87 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
     browser.node.setAttribute('aria-label', trans.__('File Browser Section'));
     browser.title.icon = folderIcon;
 
+    // Show the current file browser shortcut in its title.
+    const updateBrowserTitle = () => {
+      const binding = find(
+        app.commands.keyBindings,
+        b => b.command === CommandIDs.toggleBrowser
+      );
+      if (binding) {
+        const ks = binding.keys.map(CommandRegistry.formatKeystroke).join(', ');
+        browser.title.caption = trans.__('File Browser (%1)', ks);
+      } else {
+        browser.title.caption = trans.__('File Browser');
+      }
+    };
+    updateBrowserTitle();
+    app.commands.keyBindingChanged.connect(() => {
+      updateBrowserTitle();
+    });
+
     // Toolbar
-    toolbarRegistry.registerFactory(
+    toolbarRegistry.addFactory(
       FILE_BROWSER_FACTORY,
       'uploader',
       (browser: FileBrowser) =>
         new Uploader({ model: browser.model, translator })
     );
 
+    toolbarRegistry.addFactory(
+      FILE_BROWSER_FACTORY,
+      'fileNameSearcher',
+      (browser: FileBrowser) => {
+        const searcher = FilenameSearcher({
+          updateFilter: (
+            filterFn: (item: string) => Partial<IScore> | null,
+            query?: string
+          ) => {
+            browser.model.setFilter(value => {
+              return filterFn(value.name.toLowerCase());
+            });
+          },
+          useFuzzyFilter: true,
+          placeholder: trans.__('Filter files by name'),
+          forceRefresh: true
+        });
+        searcher.addClass(FILTERBOX_CLASS);
+        return searcher;
+      }
+    );
+
     setToolbar(
       browser,
       createToolbarFactory(
         toolbarRegistry,
-        settings,
+        settingRegistry,
         FILE_BROWSER_FACTORY,
         browserWidget.id,
         translator
       )
     );
 
-    labShell.add(browser, 'left', { rank: 100 });
+    labShell.add(browser, 'left', { rank: 100, type: 'File Browser' });
+
+    commands.addCommand(CommandIDs.toggleBrowser, {
+      label: trans.__('File Browser'),
+      execute: () => {
+        if (browser.isHidden) {
+          return commands.execute(CommandIDs.showBrowser, void 0);
+        }
+
+        return commands.execute(CommandIDs.hideBrowser, void 0);
+      }
+    });
 
     commands.addCommand(CommandIDs.showBrowser, {
+      label: trans.__('Open the file browser for the provided `path`.'),
       execute: args => {
         const path = (args.path as string) || '';
-        const browserForPath = Private.getBrowserForPath(path, factory);
+        const browserForPath = Private.getBrowserForPath(
+          path,
+          browser,
+          factory
+        );
 
         // Check for browser not found
         if (!browserForPath) {
@@ -433,14 +532,11 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
         } else {
           const areas: ILabShell.Area[] = ['left', 'right'];
           for (const area of areas) {
-            const it = labShell.widgets(area);
-            let widget = it.next();
-            while (widget) {
+            for (const widget of labShell.widgets(area)) {
               if (widget.contains(browserForPath)) {
                 labShell.activateById(widget.id);
                 return;
               }
-              widget = it.next();
             }
           }
         }
@@ -448,6 +544,7 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
     });
 
     commands.addCommand(CommandIDs.hideBrowser, {
+      label: trans.__('Hide the file browser.'),
       execute: () => {
         const widget = tracker.currentWidget;
         if (widget && !widget.isHidden) {
@@ -455,6 +552,27 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
         }
       }
     });
+
+    commands.addCommand(CommandIDs.toggleNavigateToCurrentDirectory, {
+      label: trans.__('Show Active File in File Browser'),
+      isToggled: () => browser.navigateToCurrentDirectory,
+      execute: () => {
+        const value = !browser.navigateToCurrentDirectory;
+        const key = 'navigateToCurrentDirectory';
+        return settingRegistry
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
+          .catch((reason: Error) => {
+            console.error(`Failed to set navigateToCurrentDirectory setting`);
+          });
+      }
+    });
+
+    if (commandPalette) {
+      commandPalette.addItem({
+        command: CommandIDs.toggleNavigateToCurrentDirectory,
+        category: trans.__('File Operations')
+      });
+    }
 
     // If the layout is a fresh session without saved data and not in single document
     // mode, open file browser.
@@ -465,21 +583,6 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
     });
 
     void Promise.all([app.restored, browser.model.restored]).then(() => {
-      function maybeCreate() {
-        // Create a launcher if there are no open items.
-        if (
-          labShell.isEmpty('main') &&
-          commands.hasCommand('launcher:create')
-        ) {
-          void Private.createLauncher(commands, browser);
-        }
-      }
-
-      // When layout is modified, create a launcher if there are no open items.
-      labShell.layoutModified.connect(() => {
-        maybeCreate();
-      });
-
       // Whether to automatically navigate to a document's current directory
       labShell.currentChanged.connect(async (_, change) => {
         if (browser.navigateToCurrentDirectory && change.newValue) {
@@ -488,7 +591,7 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
           if (context) {
             const { path } = context;
             try {
-              await Private.navigateToPath(path, factory, translator);
+              await Private.navigateToPath(path, browser, factory, translator);
             } catch (reason) {
               console.warn(
                 `${CommandIDs.goToPath} failed to open: ${path}`,
@@ -515,6 +618,8 @@ const browserWidget: JupyterFrontEndPlugin<void> = {
  */
 const shareFile: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:share-file',
+  description:
+    'Adds the "Copy Shareable Link" command; useful for JupyterHub deployment for example.',
   requires: [IFileBrowserFactory, ITranslator],
   autoStart: true,
   activate: (
@@ -530,21 +635,21 @@ const shareFile: JupyterFrontEndPlugin<void> = {
       execute: () => {
         const widget = tracker.currentWidget;
         const model = widget?.selectedItems().next();
-        if (!model) {
+        if (model === undefined || model.done) {
           return;
         }
 
         Clipboard.copyToSystem(
           PageConfig.getUrl({
             workspace: PageConfig.defaultWorkspace,
-            treePath: model.path,
+            treePath: model.value.path,
             toShare: true
           })
         );
       },
       isVisible: () =>
         !!tracker.currentWidget &&
-        toArray(tracker.currentWidget.selectedItems()).length === 1,
+        Array.from(tracker.currentWidget.selectedItems()).length === 1,
       icon: linkIcon.bindprops({ stylesheet: 'menuItem' }),
       label: trans.__('Copy Shareable Link')
     });
@@ -559,6 +664,8 @@ const shareFile: JupyterFrontEndPlugin<void> = {
  */
 const openWithPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:open-with',
+  description:
+    'Adds the open-with feature allowing an user to pick the non-preferred document viewer.',
   requires: [IFileBrowserFactory],
   autoStart: true,
   activate: (app: JupyterFrontEnd, factory: IFileBrowserFactory): void => {
@@ -588,17 +695,17 @@ const openWithPlugin: JupyterFrontEndPlugin<void> = {
       // get the widget factories that could be used to open all of the items
       // in the current filebrowser selection
       const factories = tracker.currentWidget
-        ? Private.OpenWith.intersection<string>(
+        ? Private.OpenWith.intersection<DocumentRegistry.WidgetFactory>(
             map(tracker.currentWidget.selectedItems(), i => {
               return Private.OpenWith.getFactories(docRegistry, i);
             })
           )
-        : new Set<string>();
+        : new Set<DocumentRegistry.WidgetFactory>();
 
       // make new menu items from the widget factories
       items = [...factories].map(factory =>
         openWith.addItem({
-          args: { factory: factory },
+          args: { factory: factory.name, label: factory.label || factory.name },
           command: CommandIDs.open
         })
       );
@@ -619,6 +726,7 @@ const openWithPlugin: JupyterFrontEndPlugin<void> = {
  */
 const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:open-browser-tab',
+  description: 'Adds the open-in-new-browser-tab features.',
   requires: [IFileBrowserFactory, ITranslator],
   autoStart: true,
   activate: (
@@ -641,7 +749,7 @@ const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
         const mode = args['mode'] as string | undefined;
 
         return Promise.all(
-          toArray(
+          Array.from(
             map(widget.selectedItems(), item => {
               if (mode === 'single-document') {
                 const url = PageConfig.getUrl({
@@ -679,6 +787,7 @@ const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
  */
 export const fileUploadStatus: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:file-upload-status',
+  description: 'Adds a file upload status widget.',
   autoStart: true,
   requires: [IFileBrowserFactory, ITranslator],
   optional: [IStatusBar],
@@ -716,18 +825,18 @@ export const fileUploadStatus: JupyterFrontEndPlugin<void> = {
  */
 const openUrlPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/filebrowser-extension:open-url',
+  description: 'Adds the feature "Open files from remote URLs".',
   autoStart: true,
-  requires: [IFileBrowserFactory, ITranslator],
+  requires: [IDefaultFileBrowser, ITranslator],
   optional: [ICommandPalette],
   activate: (
     app: JupyterFrontEnd,
-    factory: IFileBrowserFactory,
+    browser: FileBrowser,
     translator: ITranslator,
     palette: ICommandPalette | null
   ) => {
     const { commands } = app;
     const trans = translator.load('jupyterlab');
-    const { defaultBrowser: browser } = factory;
     const command = CommandIDs.openUrl;
 
     commands.addCommand(command, {
@@ -798,6 +907,7 @@ const openUrlPlugin: JupyterFrontEndPlugin<void> = {
  */
 function addCommands(
   app: JupyterFrontEnd,
+  browser: FileBrowser,
   factory: IFileBrowserFactory,
   translator: ITranslator,
   settingRegistry: ISettingRegistry | null,
@@ -805,7 +915,7 @@ function addCommands(
 ): void {
   const trans = translator.load('jupyterlab');
   const { docRegistry: registry, commands } = app;
-  const { defaultBrowser: browser, tracker } = factory;
+  const { tracker } = factory;
 
   commands.addCommand(CommandIDs.del, {
     execute: () => {
@@ -858,13 +968,23 @@ function addCommands(
   });
 
   commands.addCommand(CommandIDs.goToPath, {
+    label: trans.__('Update the file browser to display the provided `path`.'),
     execute: async args => {
       const path = (args.path as string) || '';
       const showBrowser = !(args?.dontShowBrowser ?? false);
       try {
-        const item = await Private.navigateToPath(path, factory, translator);
+        const item = await Private.navigateToPath(
+          path,
+          browser,
+          factory,
+          translator
+        );
         if (item.type !== 'directory' && showBrowser) {
-          const browserForPath = Private.getBrowserForPath(path, factory);
+          const browserForPath = Private.getBrowserForPath(
+            path,
+            browser,
+            factory
+          );
           if (browserForPath) {
             browserForPath.clearSelectedItems();
             const parts = path.split('/');
@@ -886,24 +1006,13 @@ function addCommands(
   commands.addCommand(CommandIDs.goUp, {
     label: 'go up',
     execute: async () => {
-      const browserForPath = Private.getBrowserForPath('', factory);
+      const browserForPath = Private.getBrowserForPath('', browser, factory);
       if (!browserForPath) {
         return;
       }
       const { model } = browserForPath;
-
       await model.restored;
-      if (model.path === model.rootPath) {
-        return;
-      }
-      try {
-        await model.cd('..');
-      } catch (reason) {
-        console.warn(
-          `${CommandIDs.goUp} failed to go to parent directory of ${model.path}`,
-          reason
-        );
-      }
+      void browserForPath.goUp();
     }
   });
 
@@ -936,7 +1045,11 @@ function addCommands(
           // The normal contents service errors on paths ending in slash
           path = path.slice(0, path.length - 1);
         }
-        const browserForPath = Private.getBrowserForPath(path, factory)!;
+        const browserForPath = Private.getBrowserForPath(
+          path,
+          browser,
+          factory
+        )!;
         const { services } = browserForPath.model.manager;
         const item = await services.contents.get(path, {
           content: false
@@ -980,7 +1093,7 @@ function addCommands(
 
       const { contents } = widget.model.manager.services;
       return Promise.all(
-        toArray(
+        Array.from(
           map(widget.selectedItems(), item => {
             if (item.type === 'directory') {
               const localPath = contents.localPath(item.path);
@@ -1007,7 +1120,6 @@ function addCommands(
         return folderIcon.bindprops({ stylesheet: 'menuItem' });
       }
     },
-    // FIXME-TRANS: Is this localizable?
     label: args =>
       (args['label'] || args['factory'] || trans.__('Open')) as string,
     mnemonic: 0
@@ -1083,6 +1195,11 @@ function addCommands(
         return widget.rename();
       }
     },
+    isVisible: () =>
+      // So long as this command only handles one file at time, don't show it
+      // if multiple files are selected.
+      !!tracker.currentWidget &&
+      Array.from(tracker.currentWidget.selectedItems()).length === 1,
     icon: editIcon.bindprops({ stylesheet: 'menuItem' }),
     label: trans.__('Rename'),
     mnemonic: 0
@@ -1095,15 +1212,25 @@ function addCommands(
         return;
       }
       const item = widget.selectedItems().next();
-      if (!item) {
+      if (item.done) {
         return;
       }
 
-      Clipboard.copyToSystem(item.path);
+      if (PageConfig.getOption('copyAbsolutePath') === 'true') {
+        const absolutePath = PathExt.joinWithLeadingSlash(
+          PageConfig.getOption('serverRoot') ?? '',
+          item.value.path
+        );
+        Clipboard.copyToSystem(absolutePath);
+      } else {
+        Clipboard.copyToSystem(item.value.path);
+      }
     },
     isVisible: () =>
+      // So long as this command only handles one file at time, don't show it
+      // if multiple files are selected.
       !!tracker.currentWidget &&
-      tracker.currentWidget.selectedItems().next !== undefined,
+      Array.from(tracker.currentWidget.selectedItems()).length === 1,
     icon: fileIcon.bindprops({ stylesheet: 'menuItem' }),
     label: trans.__('Copy Path')
   });
@@ -1120,42 +1247,6 @@ function addCommands(
     label: trans.__('Shut Down Kernel')
   });
 
-  commands.addCommand(CommandIDs.toggleBrowser, {
-    execute: () => {
-      if (browser.isHidden) {
-        return commands.execute(CommandIDs.showBrowser, void 0);
-      }
-
-      return commands.execute(CommandIDs.hideBrowser, void 0);
-    }
-  });
-
-  commands.addCommand(CommandIDs.createLauncher, {
-    label: trans.__('New Launcher'),
-    icon: args => (args.toolbar ? addIcon : undefined),
-    execute: (args: JSONObject) => {
-      if (commands.hasCommand('launcher:create')) {
-        return Private.createLauncher(commands, browser, args);
-      }
-    }
-  });
-
-  if (settingRegistry) {
-    commands.addCommand(CommandIDs.toggleNavigateToCurrentDirectory, {
-      label: trans.__('Show Active File in File Browser'),
-      isToggled: () => browser.navigateToCurrentDirectory,
-      execute: () => {
-        const value = !browser.navigateToCurrentDirectory;
-        const key = 'navigateToCurrentDirectory';
-        return settingRegistry
-          .set('@jupyterlab/filebrowser-extension:browser', key, value)
-          .catch((reason: Error) => {
-            console.error(`Failed to set navigateToCurrentDirectory setting`);
-          });
-      }
-    });
-  }
-
   commands.addCommand(CommandIDs.toggleLastModified, {
     label: trans.__('Show Last Modified Column'),
     isToggled: () => browser.showLastModifiedColumn,
@@ -1164,9 +1255,57 @@ function addCommands(
       const key = 'showLastModifiedColumn';
       if (settingRegistry) {
         return settingRegistry
-          .set('@jupyterlab/filebrowser-extension:browser', key, value)
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
           .catch((reason: Error) => {
-            console.error(`Failed to set showLastModifiedColumn setting`);
+            console.error(`Failed to set ${key} setting`);
+          });
+      }
+    }
+  });
+
+  commands.addCommand(CommandIDs.toggleShowFullPath, {
+    label: trans.__('Show Full Path'),
+    isToggled: () => browser.showFullPath,
+    execute: () => {
+      const value = !browser.showFullPath;
+      const key = 'showFullPath';
+      if (settingRegistry) {
+        return settingRegistry
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
+          .catch((reason: Error) => {
+            console.error(`Failed to set ${key} setting`);
+          });
+      }
+    }
+  });
+
+  commands.addCommand(CommandIDs.toggleSortNotebooksFirst, {
+    label: trans.__('Sort Notebooks Above Files'),
+    isToggled: () => browser.sortNotebooksFirst,
+    execute: () => {
+      const value = !browser.sortNotebooksFirst;
+      const key = 'sortNotebooksFirst';
+      if (settingRegistry) {
+        return settingRegistry
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
+          .catch((reason: Error) => {
+            console.error(`Failed to set ${key} setting`);
+          });
+      }
+    }
+  });
+
+  commands.addCommand(CommandIDs.toggleFileSize, {
+    label: trans.__('Show File Size Column'),
+    isToggled: () => browser.showFileSizeColumn,
+    execute: () => {
+      const value = !browser.showFileSizeColumn;
+      const key = 'showFileSizeColumn';
+      if (settingRegistry) {
+        return settingRegistry
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
+          .catch((reason: Error) => {
+            console.error(`Failed to set ${key} setting`);
           });
       }
     }
@@ -1181,9 +1320,25 @@ function addCommands(
       const key = 'showHiddenFiles';
       if (settingRegistry) {
         return settingRegistry
-          .set('@jupyterlab/filebrowser-extension:browser', key, value)
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
           .catch((reason: Error) => {
             console.error(`Failed to set showHiddenFiles setting`);
+          });
+      }
+    }
+  });
+
+  commands.addCommand(CommandIDs.toggleFileCheckboxes, {
+    label: trans.__('Show File Checkboxes'),
+    isToggled: () => browser.showFileCheckboxes,
+    execute: () => {
+      const value = !browser.showFileCheckboxes;
+      const key = 'showFileCheckboxes';
+      if (settingRegistry) {
+        return settingRegistry
+          .set(FILE_BROWSER_PLUGIN_ID, key, value)
+          .catch((reason: Error) => {
+            console.error(`Failed to set showFileCheckboxes setting`);
           });
       }
     }
@@ -1193,49 +1348,38 @@ function addCommands(
     label: trans.__('Search on File Names'),
     execute: () => alert('search')
   });
-
-  if (commandPalette) {
-    commandPalette.addItem({
-      command: CommandIDs.toggleNavigateToCurrentDirectory,
-      category: trans.__('File Operations')
-    });
-  }
 }
+
+/**
+ * Export the plugins as default.
+ */
+const plugins: JupyterFrontEndPlugin<any>[] = [
+  factory,
+  defaultFileBrowser,
+  browser,
+  shareFile,
+  fileUploadStatus,
+  downloadPlugin,
+  browserWidget,
+  openWithPlugin,
+  openBrowserTabPlugin,
+  openUrlPlugin
+];
+export default plugins;
 
 /**
  * A namespace for private module data.
  */
 namespace Private {
   /**
-   * Create a launcher for a given filebrowser widget.
-   */
-  export function createLauncher(
-    commands: CommandRegistry,
-    browser: FileBrowser,
-    args?: JSONObject
-  ): Promise<MainAreaWidget<Launcher>> {
-    const { model } = browser;
-
-    return commands
-      .execute('launcher:create', { cwd: model.path, ...args })
-      .then((launcher: MainAreaWidget<Launcher>) => {
-        model.pathChanged.connect(() => {
-          if (launcher.content) {
-            launcher.content.cwd = model.path;
-          }
-        }, launcher);
-        return launcher;
-      });
-  }
-
-  /**
    * Get browser object given file path.
    */
   export function getBrowserForPath(
     path: string,
+    browser: FileBrowser,
     factory: IFileBrowserFactory
   ): FileBrowser | undefined {
-    const { defaultBrowser: browser, tracker } = factory;
+    const { tracker } = factory;
     const driveName = browser.model.manager.services.contents.driveName(path);
 
     if (driveName) {
@@ -1263,11 +1407,12 @@ namespace Private {
    */
   export async function navigateToPath(
     path: string,
+    browser: FileBrowser,
     factory: IFileBrowserFactory,
     translator: ITranslator
   ): Promise<Contents.IModel> {
     const trans = translator.load('jupyterlab');
-    const browserForPath = Private.getBrowserForPath(path, factory);
+    const browserForPath = Private.getBrowserForPath(path, browser, factory);
     if (!browserForPath) {
       throw new Error(trans.__('No browser for path'));
     }
@@ -1333,31 +1478,13 @@ namespace Private {
       }
       browser.removeClass(restoring);
 
-      if (labShell?.isEmpty('main') && commands.hasCommand('launcher:create')) {
-        void Private.createLauncher(commands, browser);
+      if (labShell?.isEmpty('main')) {
+        void commands.execute('launcher:create');
       }
     };
     router.routed.connect(listener);
   }
-}
 
-/**
- * Export the plugins as default.
- */
-const plugins: JupyterFrontEndPlugin<any>[] = [
-  factory,
-  browser,
-  shareFile,
-  fileUploadStatus,
-  downloadPlugin,
-  browserWidget,
-  openWithPlugin,
-  openBrowserTabPlugin,
-  openUrlPlugin
-];
-export default plugins;
-
-namespace Private {
   export namespace OpenWith {
     /**
      * Get the factories for the selected item
@@ -1369,11 +1496,9 @@ namespace Private {
     export function getFactories(
       docRegistry: DocumentRegistry,
       item: Contents.IModel
-    ): Array<string> {
-      const factories = docRegistry
-        .preferredWidgetFactories(item.path)
-        .map(f => f.name);
-      const notebookFactory = docRegistry.getWidgetFactory('notebook')?.name;
+    ): Array<DocumentRegistry.WidgetFactory> {
+      const factories = docRegistry.preferredWidgetFactories(item.path);
+      const notebookFactory = docRegistry.getWidgetFactory('notebook');
       if (
         notebookFactory &&
         item.type === 'notebook' &&
@@ -1386,31 +1511,33 @@ namespace Private {
     }
 
     /**
-     * Return the intersection of multiple arrays.
+     * Return the intersection of multiple iterables.
      *
-     * @param iter Iterator of arrays
-     * @returns Set of common elements to all arrays
+     * @param iterables Iterator of iterables
+     * @returns Set of common elements to all iterables
      */
-    export function intersection<T>(iter: IIterator<Array<T>>): Set<T> {
-      // pop the first element of iter
-      const first = iter.next();
-      // first will be undefined if iter is empty
-      if (!first) {
-        return new Set<T>();
+    export function intersection<T>(iterables: Iterable<Iterable<T>>): Set<T> {
+      let accumulator: Set<T> | undefined = undefined;
+      for (const current of iterables) {
+        // Initialize accumulator.
+        if (accumulator === undefined) {
+          accumulator = new Set(current);
+          continue;
+        }
+        // Return early if empty.
+        if (accumulator.size === 0) {
+          return accumulator;
+        }
+        // Keep the intersection of accumulator and current.
+        let intersection = new Set<T>();
+        for (const value of current) {
+          if (accumulator.has(value)) {
+            intersection.add(value);
+          }
+        }
+        accumulator = intersection;
       }
-
-      // "initialize" the intersection from first
-      const isect = new Set(first);
-      // reduce over the remaining elements of iter
-      return reduce(
-        iter,
-        (isect, subarr) => {
-          // filter out all elements not present in both isect and subarr,
-          // accumulate result in new set
-          return new Set(subarr.filter(x => isect.has(x)));
-        },
-        isect
-      );
+      return accumulator ?? new Set();
     }
   }
 }

@@ -1,3 +1,6 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 Internationalization and Localization
 =====================================
 
@@ -31,7 +34,7 @@ To internationalize your extension, the following tasks are required:
 
     Domain are normalized by replacing ``-`` with ``_`` characters.
 
-3. Wraps all translatable strings with one of the `gettext functions <https://jupyterlab.readthedocs.io/en/3.6.x/api/modules/translation.html#translationbundle>`_.
+3. Wraps all translatable strings with one of the `gettext functions <https://jupyterlab.readthedocs.io/en/latest/api/modules/translation.html#translationbundle>`_.
 
 Examples:
 

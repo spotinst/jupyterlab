@@ -1,22 +1,35 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { expect, test } from '@jupyterlab/galata';
+import { expect, galata, test } from '@jupyterlab/galata';
+
+const fileName = 'toc_running.ipynb';
+import * as path from 'path';
 
 test.describe('ToC Running indicator', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.notebook.createNew();
-    await page.notebook.addCell('markdown', '# Title 1');
-    await page.notebook.addCell('code', 'from time import sleep');
-    await page.notebook.addCell('code', 'sleep(2)');
-    await page.notebook.addCell('markdown', '## Title 1.1');
-    await page.notebook.addCell('code', 'sleep(2)');
-    await page.notebook.addCell('markdown', '## Title 1.2');
-    await page.notebook.addCell('code', 'sleep(1)');
-
-    await page.notebook.run();
+  test.beforeEach(async ({ page, tmpPath }) => {
+    await page.notebook.openByPath(`${tmpPath}/${fileName}`);
+    await page.notebook.activate(fileName);
 
     await page.sidebar.openTab('table-of-contents');
+    // Wait until the last heading has loaded into the ToC
+    await page.waitForSelector(
+      '.jp-TableOfContents-content[data-document-type="notebook"] >> text=Title 1.3'
+    );
+  });
+
+  test.beforeAll(async ({ request, tmpPath }) => {
+    const contents = galata.newContentsHelper(request);
+
+    await contents.uploadFile(
+      path.resolve(__dirname, `./notebooks/${fileName}`),
+      `${tmpPath}/${fileName}`
+    );
+  });
+
+  test.afterAll(async ({ request, tmpPath }) => {
+    const contents = galata.newContentsHelper(request);
+    await contents.deleteDirectory(tmpPath);
   });
 
   test('should display running indicators', async ({ page }) => {
@@ -24,10 +37,22 @@ test.describe('ToC Running indicator', () => {
       await page.sidebar.getTabPosition('table-of-contents')
     );
     const executed = page.notebook.run();
-
     await tocPanel.waitForSelector('[data-running="1"]');
     expect(await tocPanel.screenshot()).toMatchSnapshot(
       'toc-running-indicators.png'
+    );
+
+    await executed;
+  });
+
+  test('should display error indicators', async ({ page }) => {
+    const tocPanel = await page.sidebar.getContentPanel(
+      await page.sidebar.getTabPosition('table-of-contents')
+    );
+    const executed = page.notebook.run();
+    await tocPanel.waitForSelector('[data-running="-0.5"]');
+    expect(await tocPanel.screenshot()).toMatchSnapshot(
+      'toc-running-indicator-error.png'
     );
 
     await executed;
@@ -39,9 +64,11 @@ test.describe('ToC Running indicator', () => {
     const tocPanel = await page.sidebar.getContentPanel(
       await page.sidebar.getTabPosition('table-of-contents')
     );
+    await page.notebook.run();
+
     // Collapse ToC
     await page.click(
-      '[aria-label="Table of Contents section"] li >> :nth-match(div, 3)'
+      '[aria-label="Table of Contents section"] >> button:left-of(:text("Title 1"))'
     );
 
     const executed = page.notebook.runCell(5);
@@ -50,24 +77,6 @@ test.describe('ToC Running indicator', () => {
     expect(await tocPanel.screenshot()).toMatchSnapshot(
       'toc-running-indicator-top-level.png'
     );
-
-    await executed;
-  });
-
-  test('should display running indicator in prompt', async ({ page }) => {
-    const tocPanel = await page.sidebar.getContentPanel(
-      await page.sidebar.getTabPosition('table-of-contents')
-    );
-    const toolbarButtons = await tocPanel.$$('.toc-toolbar .toc-toolbar-icon');
-    await toolbarButtons[0].click();
-
-    const tocEntry = page
-      .locator('.jp-TableOfContents-content .jp-tocItem')
-      .nth(2)
-      .locator('.toc-code-cell-prompt');
-    const executed = page.notebook.runCell(3);
-
-    await expect(tocEntry).toHaveText('[*]: ');
 
     await executed;
   });

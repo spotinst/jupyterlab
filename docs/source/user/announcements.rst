@@ -4,13 +4,7 @@
 Announcements
 =============
 
-When starting JupyterLab, you will see a pop-up in the bottom right corner
-asking for your consent to get Jupyter news (this is an opt-in feature; disabled by default).
-
-If you agree, you will be notified by time to time about important news
-about JupyterLab and the Jupyter ecosystem. You will also be notified if a
-newer version is available.
-
+Your consent is required to get Jupyter news (this is an opt-in feature).
 Once you have answered the request, you can change your decision in the *Notification*
 settings.
 
@@ -49,23 +43,4 @@ using the command line option ``--LabApp.news_url="<URL_TO_FEED_XML_FILE>"``.
 Binder
 ------
 
-To deactivate the announcements on Binder, you can change the default settings.
-To do that, you will need to add those two files in your Binder configuration:
-
-.. code-block:: json
-    :caption: overrides.json
-
-    {
-      "@jupyterlab/apputils-extension:notification": {
-        "fetchNews": "false"
-      }
-    }
-
-.. code-block:: sh
-    :caption: postBuild
-
-    #!/usr/bin/env bash
-    set -eux
-
-    mkdir -p ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings
-    cp overrides.json ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings
+You will find how to deactivate those features on Binder at :ref:`binder`.

@@ -1,3 +1,6 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 .. _terminal:
 
 Terminals
@@ -11,7 +14,7 @@ running, with the privileges of your user. Thus, if JupyterLab is
 installed on your local machine, the JupyterLab terminals will run
 there.
 
-.. image:: images/terminal_layout.png
+.. image:: ../images/terminal-layout.png
    :align: center
    :class: jp-screenshot
    :alt: JupyterLab with an open terminal in the main document area.

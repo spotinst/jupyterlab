@@ -5,6 +5,8 @@ Design System CSS:
 documentation:
   - docs/**/*
   - docs/*
+  - '*.md'
+  - '**/*.md'
 
 tag:CSS:
   - '**/*.css'
@@ -55,20 +57,12 @@ pkg:cells:
   - packages/cells/*
 
 pkg:celltags:
-  - packages/celltags/**/*
-  - packages/celltags/*
   - packages/celltags-extension/**/*
   - packages/celltags-extension/*
 
 pkg:codeeditor:
   - packages/codeeditor/**/*
   - packages/codeeditor/*
-
-pkg:collaboration:
-  - packages/collaboration/**/*
-  - packages/collaboration/*
-  - packages/collaboration-extension/**/*
-  - packages/collaboration-extension/*
 
 pkg:codemirror:
   - packages/codemirror/**/*
@@ -109,12 +103,6 @@ pkg:docmanager:
   - packages/docmanager/*
   - packages/docmanager-extension/**/*
   - packages/docmanager-extension/*
-
-pkg:docprovider:
-  - packages/docprovider/**/*
-  - packages/docprovider/*
-  - packages/docprovider-extension/**/*
-  - packages/docprovider-extension/*
 
 pkg:docregistry:
   - packages/docregistry/**/*
@@ -190,6 +178,12 @@ pkg:logconsole:
   - packages/logconsole-extension/**/*
   - packages/logconsole-extension/*
 
+pkg:lsp:
+  - packages/lsp/**/*
+  - packages/lsp/*
+  - packages/lsp-extension/**/*
+  - packages/lsp-extension/*
+
 pkg:mainmenu:
   - packages/mainmenu/**/*
   - packages/mainmenu/*
@@ -202,11 +196,9 @@ pkg:markdownviewer:
   - packages/markdownviewer-extension/**/*
   - packages/markdownviewer-extension/*
 
-pkg:mathjax2:
-  - packages/mathjax2/**/*
-  - packages/mathjax2/*
-  - packages/mathjax2-extension/**/*
-  - packages/mathjax2-extension/*
+pkg:mathjax:
+  - packages/mathjax-extension/**/*
+  - packages/mathjax-extension/*
 
 pkg:notebook:
   - packages/notebook/**/*
@@ -229,6 +221,12 @@ pkg:pdf:
 pkg:property-inspector:
   - packages/property-inspector/**/*
   - packages/property-inspector/*
+
+pkg:pluginmanager:
+  - packages/pluginmanager/**/*
+  - packages/pluginmanager/*
+  - packages/pluginmanager-extension/**/*
+  - packages/pluginmanager-extension/*
 
 pkg:rendermime:
   - packages/rendermime/**/*
@@ -307,12 +305,6 @@ pkg:ui-components:
   - packages/ui-components/*
   - packages/ui-components-extension/**/*
   - packages/ui-components-extension/*
-
-pkg:vdom:
-  - packages/vdom/**/*
-  - packages/vdom/*
-  - packages/vdom-extension/**/*
-  - packages/vdom-extension/*
 
 pkg:vega:
   - packages/vega5-extension/**/*

@@ -1,0 +1,17 @@
+/*-----------------------------------------------------------------------------
+| Copyright (c) Jupyter Development Team.
+| Distributed under the terms of the Modified BSD License.
+|----------------------------------------------------------------------------*/
+
+<<<<<<<< HEAD:packages/collaboration-extension/style/base.css
+.jp-UserMenu-Spacer {
+  flex-grow: 1;
+  flex-shrink: 1;
+========
+@import './fonts.css';
+
+.jp-OutputArea-output.jp-RenderedLatex .MJX-DISPLAY {
+  margin: 0;
+  text-align: left;
+>>>>>>>> 3d525a2c24524fe1431c3227e62057c9137940ed:packages/mathjax-extension/style/base.css
+}

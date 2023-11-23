@@ -5,7 +5,8 @@ import { Notification, NotificationManager } from '@jupyterlab/apputils';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { Base64ModelFactory } from '@jupyterlab/docregistry';
 import { IRenderMime } from '@jupyterlab/rendermime-interfaces';
-import { Token } from '@lumino/coreutils';
+import { ServiceManager } from '@jupyterlab/services';
+import { PromiseDelegate, Token } from '@lumino/coreutils';
 import { JupyterFrontEnd, JupyterFrontEndPlugin } from './frontend';
 import { createRendermimePlugins } from './mimerenderers';
 import { ILabShell, LabShell } from './shell';
@@ -19,10 +20,17 @@ export class JupyterLab extends JupyterFrontEnd<ILabShell> {
    * Construct a new JupyterLab object.
    */
   constructor(options: JupyterLab.IOptions = { shell: new LabShell() }) {
-    super({ ...options, shell: options.shell || new LabShell() });
-    this.restored = this.shell.restored
-      .then(() => undefined)
-      .catch(() => undefined);
+    super({
+      ...options,
+      shell: options.shell || new LabShell(),
+      serviceManager:
+        options.serviceManager ||
+        new ServiceManager({
+          standby: () => {
+            return !this._info.isConnected || 'when-hidden';
+          }
+        })
+    });
 
     // Create an IInfo dictionary from the options to override the defaults.
     const info = Object.keys(JupyterLab.defaultInfo).reduce((acc, val) => {
@@ -34,6 +42,34 @@ export class JupyterLab extends JupyterFrontEnd<ILabShell> {
 
     // Populate application info.
     this._info = { ...JupyterLab.defaultInfo, ...info };
+
+    this.restored = this.shell.restored
+      .then(async () => {
+        const activated: Promise<void | void[]>[] = [];
+        const deferred = this.activateDeferredPlugins().catch(error => {
+          console.error('Error when activating deferred plugins\n:', error);
+        });
+        activated.push(deferred);
+        if (this._info.deferred) {
+          const customizedDeferred = Promise.all(
+            this._info.deferred.matches.map(pluginID =>
+              this.activatePlugin(pluginID)
+            )
+          ).catch(error => {
+            console.error(
+              'Error when activating customized list of deferred plugins:\n',
+              error
+            );
+          });
+          activated.push(customizedDeferred);
+        }
+        Promise.all(activated)
+          .then(() => {
+            this._allPluginsActivated.resolve();
+          })
+          .catch(() => undefined);
+      })
+      .catch(() => undefined);
 
     // Populate application paths override the defaults if necessary.
     const defaultURLs = JupyterLab.defaultPaths.urls;
@@ -138,6 +174,12 @@ export class JupyterLab extends JupyterFrontEnd<ILabShell> {
   }
 
   /**
+   * Promise that resolves when all the plugins are activated, including the deferred.
+   */
+  get allPluginsActivated(): Promise<void> {
+    return this._allPluginsActivated.promise;
+  }
+  /**
    * Register plugins from a plugin module.
    *
    * @param mod - The plugin module to register.
@@ -171,8 +213,9 @@ export class JupyterLab extends JupyterFrontEnd<ILabShell> {
     });
   }
 
-  private _info: JupyterLab.IInfo;
+  private _info: JupyterLab.IInfo = JupyterLab.defaultInfo;
   private _paths: JupyterFrontEnd.IPaths;
+  private _allPluginsActivated = new PromiseDelegate<void>();
 }
 
 /**
@@ -183,7 +226,7 @@ export namespace JupyterLab {
    * The options used to initialize a JupyterLab object.
    */
   export interface IOptions
-    extends JupyterFrontEnd.IOptions<LabShell>,
+    extends Partial<JupyterFrontEnd.IOptions<ILabShell>>,
       Partial<IInfo> {
     paths?: Partial<JupyterFrontEnd.IPaths>;
   }
@@ -191,7 +234,10 @@ export namespace JupyterLab {
   /**
    * The layout restorer token.
    */
-  export const IInfo = new Token<IInfo>('@jupyterlab/application:IInfo');
+  export const IInfo = new Token<IInfo>(
+    '@jupyterlab/application:IInfo',
+    'A service providing metadata about the current application, including disabled extensions and whether dev mode is enabled.'
+  );
 
   /**
    * The information about a JupyterLab application.
@@ -218,9 +264,71 @@ export namespace JupyterLab {
     readonly mimeExtensions: IRenderMime.IExtensionModule[];
 
     /**
+     * The information about available plugins.
+     */
+    readonly availablePlugins: IPluginInfo[];
+
+    /**
      * Whether files are cached on the server.
      */
     readonly filesCached: boolean;
+
+    /**
+     * Every periodic network polling should be paused while this is set
+     * to `false`. Extensions should use this value to decide whether to proceed
+     * with the polling.
+     * The extensions may also set this value to `false` if there is no need to
+     * fetch anything from the server backend basing on some conditions
+     * (e.g. when an error message dialog is displayed).
+     * At the same time, the extensions are responsible for setting this value
+     * back to `true`.
+     */
+    isConnected: boolean;
+  }
+
+  /*
+   * A read-only subset of the `Token`.
+   */
+  interface IToken extends Readonly<Pick<Token<any>, 'name' | 'description'>> {
+    // no-op
+  }
+
+  /**
+   * A readonly subset of lumino plugin bundle (excluding activation function,
+   * service, and state information, and runtime token details).
+   */
+  interface ILuminoPluginData
+    extends Readonly<
+      Pick<JupyterFrontEndPlugin<void>, 'id' | 'description' | 'autoStart'>
+    > {
+    /**
+     * The types of required services for the plugin, or `[]`.
+     */
+    readonly requires: IToken[];
+
+    /**
+     * The types of optional services for the the plugin, or `[]`.
+     */
+    readonly optional: IToken[];
+
+    /**
+     * The type of service provided by the plugin, or `null`.
+     */
+    readonly provides: IToken | null;
+  }
+
+  /**
+   * A subset of plugin bundle enriched with JupyterLab extension metadata.
+   */
+  export interface IPluginInfo extends ILuminoPluginData {
+    /**
+     * The name of the extension which provides the plugin.
+     */
+    extension: string;
+    /**
+     * Whether the plugin is enabled.
+     */
+    enabled: boolean;
   }
 
   /**
@@ -231,7 +339,9 @@ export namespace JupyterLab {
     deferred: { patterns: [], matches: [] },
     disabled: { patterns: [], matches: [] },
     mimeExtensions: [],
-    filesCached: PageConfig.getOption('cacheFiles').toLowerCase() === 'true'
+    availablePlugins: [],
+    filesCached: PageConfig.getOption('cacheFiles').toLowerCase() === 'true',
+    isConnected: true
   };
 
   /**

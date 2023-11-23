@@ -3,7 +3,7 @@
 | Distributed under the terms of the Modified BSD License.
 |----------------------------------------------------------------------------*/
 
-import commander from 'commander';
+import { program as commander } from 'commander';
 import * as utils from './utils';
 
 // Specify the program signature.
@@ -14,7 +14,7 @@ commander
   .option('--skip-commit', 'Whether to skip commit changes')
   .arguments('<spec>')
   .action((spec: any, opts: any) => {
-    utils.exitOnUuncaughtException();
+    utils.exitOnUncaughtException();
 
     // Get the previous version.
     const prev = utils.getPythonVersion();
@@ -58,19 +58,7 @@ commander
 
     // Handle dry runs.
     if (opts.dryRun) {
-      utils.run(`bumpversion --dry-run --verbose ${spec}`);
-      return;
-    }
-
-    // If this is a major release during the alpha cycle, bump
-    // just the Python version.
-    if (prev.indexOf('a') !== -1 && spec === 'major') {
-      // Bump the version.
-      utils.run(`bumpversion ${spec}`);
-
-      // Run the post-bump script.
-      utils.postbump(commit);
-
+      utils.run(`bumpversion --allow-dirty --dry-run --verbose ${spec}`);
       return;
     }
 
@@ -92,22 +80,17 @@ commander
       lernaVersion += ' --preid=alpha';
     }
 
-    let cmd = `lerna version -m \"[ci skip] New version\" --force-publish=* --no-push ${lernaVersion}`;
+    let cmd = `lerna version --no-git-tag-version --force-publish=* --no-push ${lernaVersion}`;
     if (opts.force) {
       cmd += ' --yes';
     }
-    const oldVersion = utils.run(
-      'git rev-parse HEAD',
-      {
-        stdio: 'pipe',
-        encoding: 'utf8'
-      },
-      true
-    );
-    // For a preminor release, we bump 10 minor versions so that we do
+
+    const oldVersion = utils.getJSVersion('metapackage');
+
+    // For a major release, we bump 10 minor versions so that we do
     // not conflict with versions during minor releases of the top
     // level package.
-    if (lernaVersion === 'preminor') {
+    if (spec === 'major') {
       for (let i = 0; i < 10; i++) {
         utils.run(cmd);
       }
@@ -115,21 +98,14 @@ commander
       utils.run(cmd);
     }
 
-    const newVersion = utils.run(
-      'git rev-parse HEAD',
-      {
-        stdio: 'pipe',
-        encoding: 'utf8'
-      },
-      true
-    );
-    if (oldVersion === newVersion) {
+    const newVersion = utils.getJSVersion('metapackage');
+    if (spec !== 'major' && oldVersion === newVersion) {
       // lerna didn't version anything, so we assume the user aborted
       throw new Error('Lerna aborted');
     }
 
     // Bump the version.
-    utils.run(`bumpversion ${spec}`);
+    utils.run(`bumpversion --allow-dirty ${spec}`);
 
     // Run the post-bump script.
     utils.postbump(commit);

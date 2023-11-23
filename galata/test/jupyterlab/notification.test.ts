@@ -72,9 +72,11 @@ test.describe('Toast', () => {
 
     const handle = await page.waitForSelector('.Toastify__toast');
 
-    expect(await handle.screenshot()).toMatchSnapshot({
-      name: `notification-with-actions.png`
-    });
+    expect(await handle.screenshot({ animations: 'disabled' })).toMatchSnapshot(
+      {
+        name: `notification-with-actions.png`
+      }
+    );
 
     await Promise.all([
       handle.waitForElementState('hidden'),
@@ -244,7 +246,9 @@ test.describe('Notification center', () => {
     );
 
     await page
-      .locator('.jp-Notification-Header >> button[title="Hide notifications"]')
+      .locator(
+        '.jp-Notification-Header >> jp-button[title="Hide notifications"]'
+      )
       .click();
 
     expect(await status.getAttribute('class')).not.toMatch(

@@ -2,13 +2,12 @@
 
 // Distributed under the terms of the Modified BSD License.
 
-import { Dialog, showDialog } from '@jupyterlab/apputils';
+import { Dialog, ReactWidget, showDialog } from '@jupyterlab/apputils';
 import {
   acceptDialog,
   dismissDialog,
   waitForDialog
-} from '@jupyterlab/testutils';
-import { each } from '@lumino/algorithm';
+} from '@jupyterlab/testing';
 import { Message } from '@lumino/messaging';
 import { Widget } from '@lumino/widgets';
 import * as React from 'react';
@@ -71,7 +70,6 @@ describe('@jupyterlab/apputils', () => {
         });
 
         expect(dialog).toBeInstanceOf(Dialog);
-        dialog.dispose();
       });
     });
 
@@ -277,8 +275,9 @@ describe('@jupyterlab/apputils', () => {
     });
 
     describe('#onAfterAttach()', () => {
-      it('should attach event listeners', () => {
+      it('should attach event listeners', async () => {
         Widget.attach(dialog, document.body);
+        await dialog.ready;
         expect(dialog.methods).toContain('onAfterAttach');
         ['keydown', 'contextmenu', 'click', 'focus'].forEach(event => {
           simulate(dialog.node, event);
@@ -291,15 +290,16 @@ describe('@jupyterlab/apputils', () => {
         expect(document.activeElement!.className).toContain('jp-mod-accept');
       });
 
-      it('should focus the primary element', () => {
+      it('should focus the primary element', async () => {
         const body = (
           <div>
             <input type={'text'} />
           </div>
         );
-        const dialog = new TestDialog({ body, focusNodeSelector: 'input' });
 
+        const dialog = new TestDialog({ body, focusNodeSelector: 'input' });
         Widget.attach(dialog, document.body);
+        await dialog.ready;
         expect(document.activeElement!.localName).toBe('input');
         dialog.dispose();
       });
@@ -356,6 +356,7 @@ describe('@jupyterlab/apputils', () => {
       };
 
       const data: Dialog.IButton = {
+        ariaLabel: 'ariafoo',
         label: 'foo',
         iconClass: 'bar',
         iconLabel: 'foo',
@@ -382,7 +383,7 @@ describe('@jupyterlab/apputils', () => {
           expect(widget.node.firstChild!.textContent).toBe('foo');
         });
 
-        it('should create the body from a virtual node', () => {
+        it('should create the body from a virtual node', async () => {
           const vnode = (
             <div>
               <input type={'text'} />
@@ -393,11 +394,13 @@ describe('@jupyterlab/apputils', () => {
             </div>
           );
           const widget = renderer.createBody(vnode);
+          Widget.attach(widget, document.body);
+          await (widget as ReactWidget).renderPromise;
+
           const button = widget.node.querySelector('button')!;
           const input = widget.node.querySelector('input')!;
           const select = widget.node.querySelector('select')!;
 
-          Widget.attach(widget, document.body);
           expect(button.className).toContain('jp-mod-styled');
           expect(input.className).toContain('jp-mod-styled');
           expect(select.className).toContain('jp-mod-styled');
@@ -415,8 +418,8 @@ describe('@jupyterlab/apputils', () => {
       describe('#createFooter()', () => {
         it('should create the footer of the dialog', () => {
           const buttons = [Dialog.okButton, { label: 'foo' }];
-          const nodes = buttons.map((button: Dialog.IButton) => {
-            return renderer.createButtonNode(button);
+          const nodes = buttons.map(button => {
+            return renderer.createButtonNode(button as Dialog.IButton);
           });
           const footer = renderer.createFooter(nodes, null);
           const buttonNodes = footer.node.querySelectorAll('button');
@@ -425,9 +428,9 @@ describe('@jupyterlab/apputils', () => {
           expect(footer.node.contains(nodes[0])).toBe(true);
           expect(footer.node.contains(nodes[1])).toBe(true);
           expect(buttonNodes.length).toBeGreaterThan(0);
-          each(buttonNodes, (node: Element) => {
+          for (const node of buttonNodes) {
             expect(node.className).toContain('jp-mod-styled');
-          });
+          }
         });
 
         it('should create the footer of the dialog with checkbox', () => {

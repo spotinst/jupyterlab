@@ -12,14 +12,19 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 import {
+  Clipboard,
+  Dialog,
   ICommandPalette,
+  InputDialog,
+  ISessionContextDialogs,
   IThemeManager,
   MainAreaWidget,
-  sessionContextDialogs,
+  SessionContextDialogs,
+  showDialog,
   WidgetTracker
 } from '@jupyterlab/apputils';
+import { CodeCell } from '@jupyterlab/cells';
 import { IEditorServices } from '@jupyterlab/codeeditor';
-import { CodeMirrorEditor } from '@jupyterlab/codemirror';
 import { ConsolePanel, IConsoleTracker } from '@jupyterlab/console';
 import { PageConfig, PathExt } from '@jupyterlab/coreutils';
 import {
@@ -28,7 +33,8 @@ import {
   IDebuggerConfig,
   IDebuggerHandler,
   IDebuggerSidebar,
-  IDebuggerSources
+  IDebuggerSources,
+  IDebuggerSourceViewer
 } from '@jupyterlab/debugger';
 import { DocumentWidget } from '@jupyterlab/docregistry';
 import { FileEditor, IEditorTracker } from '@jupyterlab/fileeditor';
@@ -45,13 +51,23 @@ import {
 } from '@jupyterlab/rendermime';
 import { Session } from '@jupyterlab/services';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
-import { ITranslator } from '@jupyterlab/translation';
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+
+function notifyCommands(app: JupyterFrontEnd): void {
+  Object.values(Debugger.CommandIDs).forEach(command => {
+    if (app.commands.hasCommand(command)) {
+      app.commands.notifyCommandChanged(command);
+    }
+  });
+}
 
 /**
  * A plugin that provides visual debugging support for consoles.
  */
 const consoles: JupyterFrontEndPlugin<void> = {
+  // FIXME This should be in @jupyterlab/console-extension
   id: '@jupyterlab/debugger-extension:consoles',
+  description: 'Add debugger capability to the consoles.',
   autoStart: true,
   requires: [IDebugger, IConsoleTracker],
   optional: [ILabShell],
@@ -73,7 +89,7 @@ const consoles: JupyterFrontEndPlugin<void> = {
       const { sessionContext } = widget;
       await sessionContext.ready;
       await handler.updateContext(widget, sessionContext);
-      app.commands.notifyCommandChanged();
+      notifyCommands(app);
     };
 
     if (labShell) {
@@ -97,7 +113,9 @@ const consoles: JupyterFrontEndPlugin<void> = {
  * A plugin that provides visual debugging support for file editors.
  */
 const files: JupyterFrontEndPlugin<void> = {
+  // FIXME This should be in @jupyterlab/fileeditor-extension
   id: '@jupyterlab/debugger-extension:files',
+  description: 'Adds debugger capabilities to files.',
   autoStart: true,
   requires: [IDebugger, IEditorTracker],
   optional: [ILabShell],
@@ -136,7 +154,7 @@ const files: JupyterFrontEndPlugin<void> = {
           activeSessions[model.id] = session;
         }
         await handler.update(widget, session);
-        app.commands.notifyCommandChanged();
+        notifyCommands(app);
       } catch {
         return;
       }
@@ -156,7 +174,7 @@ const files: JupyterFrontEndPlugin<void> = {
       editorTracker.currentChanged.connect((_, documentWidget) => {
         if (documentWidget) {
           void updateHandlerAndCommands(
-            (documentWidget as unknown) as DocumentWidget
+            documentWidget as unknown as DocumentWidget
           );
         }
       });
@@ -168,19 +186,26 @@ const files: JupyterFrontEndPlugin<void> = {
  * A plugin that provides visual debugging support for notebooks.
  */
 const notebooks: JupyterFrontEndPlugin<IDebugger.IHandler> = {
+  // FIXME This should be in @jupyterlab/notebook-extension
   id: '@jupyterlab/debugger-extension:notebooks',
+  description:
+    'Adds debugger capability to notebooks and provides the debugger notebook handler.',
   autoStart: true,
-  requires: [IDebugger, INotebookTracker, ITranslator],
-  optional: [ILabShell, ICommandPalette],
+  requires: [IDebugger, INotebookTracker],
+  optional: [ILabShell, ICommandPalette, ISessionContextDialogs, ITranslator],
   provides: IDebuggerHandler,
   activate: (
     app: JupyterFrontEnd,
     service: IDebugger,
     notebookTracker: INotebookTracker,
-    translator: ITranslator,
     labShell: ILabShell | null,
-    palette: ICommandPalette | null
+    palette: ICommandPalette | null,
+    sessionDialogs_: ISessionContextDialogs | null,
+    translator_: ITranslator | null
   ): Debugger.Handler => {
+    const translator = translator_ ?? nullTranslator;
+    const sessionDialogs =
+      sessionDialogs_ ?? new SessionContextDialogs({ translator });
     const handler = new Debugger.Handler({
       type: 'notebook',
       shell: app.shell,
@@ -202,14 +227,19 @@ const notebooks: JupyterFrontEndPlugin<IDebugger.IHandler> = {
         }
 
         const { content, sessionContext } = widget;
-        const restarted = await sessionContextDialogs.restart(sessionContext);
+        const restarted = await sessionDialogs.restart(sessionContext);
         if (!restarted) {
           return;
         }
 
         await service.restoreDebuggerState(state);
         await handler.updateWidget(widget, sessionContext.session);
-        await NotebookActions.runAll(content, sessionContext);
+        await NotebookActions.runAll(
+          content,
+          sessionContext,
+          sessionDialogs,
+          translator
+        );
       }
     });
 
@@ -221,7 +251,7 @@ const notebooks: JupyterFrontEndPlugin<IDebugger.IHandler> = {
         await sessionContext.ready;
         await handler.updateContext(widget, sessionContext);
       }
-      app.commands.notifyCommandChanged();
+      notifyCommands(app);
     };
 
     if (labShell) {
@@ -255,19 +285,22 @@ const notebooks: JupyterFrontEndPlugin<IDebugger.IHandler> = {
  */
 const service: JupyterFrontEndPlugin<IDebugger> = {
   id: '@jupyterlab/debugger-extension:service',
+  description: 'Provides the debugger service.',
   autoStart: true,
   provides: IDebugger,
   requires: [IDebuggerConfig],
-  optional: [IDebuggerSources],
+  optional: [IDebuggerSources, ITranslator],
   activate: (
     app: JupyterFrontEnd,
     config: IDebugger.IConfig,
-    debuggerSources: IDebugger.ISources | null
+    debuggerSources: IDebugger.ISources | null,
+    translator: ITranslator | null
   ) =>
     new Debugger.Service({
       config,
       debuggerSources,
-      specsManager: app.serviceManager.kernelspecs
+      specsManager: app.serviceManager.kernelspecs,
+      translator
     })
 };
 
@@ -276,6 +309,7 @@ const service: JupyterFrontEndPlugin<IDebugger> = {
  */
 const configuration: JupyterFrontEndPlugin<IDebugger.IConfig> = {
   id: '@jupyterlab/debugger-extension:config',
+  description: 'Provides the debugger configuration',
   provides: IDebuggerConfig,
   autoStart: true,
   activate: () => new Debugger.Config()
@@ -286,6 +320,7 @@ const configuration: JupyterFrontEndPlugin<IDebugger.IConfig> = {
  */
 const sources: JupyterFrontEndPlugin<IDebugger.ISources> = {
   id: '@jupyterlab/debugger-extension:sources',
+  description: 'Provides the source feature for debugging',
   autoStart: true,
   provides: IDebuggerSources,
   requires: [IDebuggerConfig, IEditorServices],
@@ -313,6 +348,8 @@ const sources: JupyterFrontEndPlugin<IDebugger.ISources> = {
  */
 const variables: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/debugger-extension:variables',
+  description:
+    'Adds variables renderer and inspection in the debugger variable panel.',
   autoStart: true,
   requires: [IDebugger, IDebuggerHandler, ITranslator],
   optional: [IThemeManager, IRenderMimeRegistry],
@@ -340,9 +377,11 @@ const variables: JupyterFrontEndPlugin<void> = {
       caption: trans.__('Inspect Variable'),
       isEnabled: args =>
         !!service.session?.isStarted &&
-        (args.variableReference ??
-          service.model.variables.selectedVariable?.variablesReference ??
-          0) > 0,
+        Number(
+          args.variableReference ??
+            service.model.variables.selectedVariable?.variablesReference ??
+            0
+        ) > 0,
       execute: async args => {
         let { variableReference, name } = args as {
           variableReference?: number;
@@ -394,7 +433,8 @@ const variables: JupyterFrontEndPlugin<void> = {
         model.changed.connect(disposeWidget);
         shell.add(widget, 'main', {
           mode: tracker.currentWidget ? 'split-right' : 'split-bottom',
-          activate: false
+          activate: false,
+          type: 'Debugger Variables'
         });
       }
     });
@@ -471,8 +511,40 @@ const variables: JupyterFrontEndPlugin<void> = {
 
         shell.add(widget, 'main', {
           mode: trackerMime.currentWidget ? 'split-right' : 'split-bottom',
-          activate: false
+          activate: false,
+          type: 'Debugger Variables'
         });
+      }
+    });
+
+    commands.addCommand(CommandIDs.copyToClipboard, {
+      label: trans.__('Copy to Clipboard'),
+      caption: trans.__('Copy text representation of the value to clipboard'),
+      isEnabled: () => {
+        return (
+          !!service.session?.isStarted &&
+          !!service.model.variables.selectedVariable?.value
+        );
+      },
+      isVisible: () => handler.activeWidget instanceof NotebookPanel,
+      execute: async () => {
+        const value = service.model.variables.selectedVariable!.value;
+        if (value) {
+          Clipboard.copyToSystem(value);
+        }
+      }
+    });
+
+    commands.addCommand(CommandIDs.copyToGlobals, {
+      label: trans.__('Copy Variable to Globals'),
+      caption: trans.__('Copy variable to globals scope'),
+      isEnabled: () => !!service.session?.isStarted,
+      isVisible: () =>
+        handler.activeWidget instanceof NotebookPanel &&
+        service.model.supportCopyToGlobals,
+      execute: async args => {
+        const name = service.model.variables.selectedVariable!.name;
+        await service.copyToGlobals(name);
       }
     });
   }
@@ -483,6 +555,7 @@ const variables: JupyterFrontEndPlugin<void> = {
  */
 const sidebar: JupyterFrontEndPlugin<IDebugger.ISidebar> = {
   id: '@jupyterlab/debugger-extension:sidebar',
+  description: 'Provides the debugger sidebar.',
   provides: IDebuggerSidebar,
   requires: [IDebugger, IEditorServices, ITranslator],
   optional: [IThemeManager, ISettingRegistry],
@@ -510,7 +583,7 @@ const sidebar: JupyterFrontEndPlugin<IDebugger.ISidebar> = {
 
     const breakpointsCommands = {
       registry: commands,
-      pause: CommandIDs.pause
+      pauseOnExceptions: CommandIDs.pauseOnExceptions
     };
 
     const sidebar = new Debugger.Sidebar({
@@ -546,14 +619,156 @@ const sidebar: JupyterFrontEndPlugin<IDebugger.ISidebar> = {
 };
 
 /**
+ * The source viewer UI plugin.
+ */
+const sourceViewer: JupyterFrontEndPlugin<IDebugger.ISourceViewer> = {
+  id: '@jupyterlab/debugger-extension:source-viewer',
+  description: 'Initialize the debugger sources viewer.',
+  requires: [IDebugger, IEditorServices, IDebuggerSources, ITranslator],
+  provides: IDebuggerSourceViewer,
+  autoStart: true,
+  activate: async (
+    app: JupyterFrontEnd,
+    service: IDebugger,
+    editorServices: IEditorServices,
+    debuggerSources: IDebugger.ISources,
+    translator: ITranslator
+  ): Promise<IDebugger.ISourceViewer> => {
+    const readOnlyEditorFactory = new Debugger.ReadOnlyEditorFactory({
+      editorServices
+    });
+    const { model } = service;
+
+    const onCurrentFrameChanged = (
+      _: IDebugger.Model.ICallstack,
+      frame: IDebugger.IStackFrame
+    ): void => {
+      debuggerSources
+        .find({
+          focus: true,
+          kernel: service.session?.connection?.kernel?.name ?? '',
+          path: service.session?.connection?.path ?? '',
+          source: frame?.source?.path ?? ''
+        })
+        .forEach(editor => {
+          requestAnimationFrame(() => {
+            void editor.reveal().then(() => {
+              const edit = editor.get();
+              if (edit) {
+                Debugger.EditorHandler.showCurrentLine(edit, frame.line);
+              }
+            });
+          });
+        });
+    };
+    model.callstack.currentFrameChanged.connect(onCurrentFrameChanged);
+
+    const openSource = (
+      source: IDebugger.Source,
+      breakpoint?: IDebugger.IBreakpoint
+    ): void => {
+      if (!source) {
+        return;
+      }
+      const { content, mimeType, path } = source;
+      const results = debuggerSources.find({
+        focus: true,
+        kernel: service.session?.connection?.kernel?.name ?? '',
+        path: service.session?.connection?.path ?? '',
+        source: path
+      });
+      if (results.length > 0) {
+        if (breakpoint && typeof breakpoint.line !== 'undefined') {
+          results.forEach(editor => {
+            void editor.reveal().then(() => {
+              editor.get()?.revealPosition({
+                line: (breakpoint.line as number) - 1,
+                column: breakpoint.column || 0
+              });
+            });
+          });
+        }
+        return;
+      }
+      const editorWrapper = readOnlyEditorFactory.createNewEditor({
+        content,
+        mimeType,
+        path
+      });
+      const editor = editorWrapper.editor;
+      const editorHandler = new Debugger.EditorHandler({
+        debuggerService: service,
+        editorReady: () => Promise.resolve(editor),
+        getEditor: () => editor,
+        path,
+        src: editor.model.sharedModel
+      });
+      editorWrapper.disposed.connect(() => editorHandler.dispose());
+
+      debuggerSources.open({
+        label: PathExt.basename(path),
+        caption: path,
+        editorWrapper
+      });
+
+      const frame = service.model.callstack.frame;
+      if (frame) {
+        Debugger.EditorHandler.showCurrentLine(editor, frame.line);
+      }
+    };
+
+    const trans = translator.load('jupyterlab');
+
+    app.commands.addCommand(Debugger.CommandIDs.openSource, {
+      label: trans.__('Open Source'),
+      caption: trans.__('Open Source'),
+      isEnabled: () => !!sourceViewer,
+      execute: async args => {
+        const path = (args.path as string) || '';
+        if (!path) {
+          throw Error('Path to open is needed');
+        }
+        if (!service.isStarted) {
+          const choice = await showDialog({
+            title: trans.__('Start debugger?'),
+            body: trans.__(
+              'The debugger service is needed to open the source %1',
+              path
+            ),
+            buttons: [
+              Dialog.cancelButton({ label: trans.__('Cancel') }),
+              Dialog.okButton({ label: trans.__('Start debugger') })
+            ]
+          });
+          if (choice.button.accept) {
+            await service.start();
+          } else {
+            return;
+          }
+        }
+        const source = await service.getSource({
+          path
+        });
+        return openSource(source);
+      }
+    });
+
+    return Object.freeze({
+      open: openSource
+    });
+  }
+};
+
+/**
  * The main debugger UI plugin.
  */
 const main: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/debugger-extension:main',
+  description: 'Initialize the debugger user interface.',
   requires: [IDebugger, IDebuggerSidebar, IEditorServices, ITranslator],
   optional: [
     ICommandPalette,
-    IDebuggerSources,
+    IDebuggerSourceViewer,
     ILabShell,
     ILayoutRestorer,
     ILoggerRegistry,
@@ -567,7 +782,7 @@ const main: JupyterFrontEndPlugin<void> = {
     editorServices: IEditorServices,
     translator: ITranslator,
     palette: ICommandPalette | null,
-    debuggerSources: IDebugger.ISources | null,
+    sourceViewer: IDebugger.ISourceViewer | null,
     labShell: ILabShell | null,
     restorer: ILayoutRestorer | null,
     loggerRegistry: ILoggerRegistry | null,
@@ -606,7 +821,7 @@ const main: JupyterFrontEndPlugin<void> = {
       const info = (await kernel.info).language_info;
       const name = info.name;
       const mimeType =
-        editorServices?.mimeTypeService.getMimeTypeByLanguage({ name }) ?? '';
+        editorServices.mimeTypeService.getMimeTypeByLanguage({ name }) ?? '';
       return mimeType;
     };
 
@@ -624,6 +839,10 @@ const main: JupyterFrontEndPlugin<void> = {
           okLabel: trans.__('Evaluate'),
           cancelLabel: trans.__('Cancel'),
           mimeType,
+          contentFactory: new CodeCell.ContentFactory({
+            editorFactory: options =>
+              editorServices.factoryService.newInlineEditor(options)
+          }),
           rendermime
         });
         const code = result.value;
@@ -670,7 +889,7 @@ const main: JupyterFrontEndPlugin<void> = {
         } else {
           await service.pause();
         }
-        commands.notifyCommandChanged();
+        commands.notifyCommandChanged(CommandIDs.debugContinue);
       }
     });
 
@@ -681,7 +900,7 @@ const main: JupyterFrontEndPlugin<void> = {
       isEnabled: () => service.hasStoppedThreads(),
       execute: async () => {
         await service.restart();
-        commands.notifyCommandChanged();
+        notifyCommands(app);
       }
     });
 
@@ -715,25 +934,34 @@ const main: JupyterFrontEndPlugin<void> = {
       }
     });
 
-    commands.addCommand(CommandIDs.pause, {
-      label: trans.__('Enable / Disable pausing on exceptions'),
-      caption: () =>
-        service.isStarted
-          ? service.pauseOnExceptionsIsValid()
-            ? service.isPausingOnExceptions
-              ? trans.__('Disable pausing on exceptions')
-              : trans.__('Enable pausing on exceptions')
-            : trans.__('Kernel does not support pausing on exceptions.')
-          : trans.__('Enable / Disable pausing on exceptions'),
-      className: 'jp-PauseOnExceptions',
-      icon: Debugger.Icons.pauseOnExceptionsIcon,
-      isToggled: () => {
-        return service.isPausingOnExceptions;
-      },
+    commands.addCommand(CommandIDs.pauseOnExceptions, {
+      label: args => (args.filter as string) || 'Breakpoints on exception',
+      caption: args => args.description as string,
+      isToggled: args =>
+        service.session?.isPausingOnException(args.filter as string) || false,
       isEnabled: () => service.pauseOnExceptionsIsValid(),
-      execute: async () => {
-        await service.pauseOnExceptions(!service.isPausingOnExceptions);
-        commands.notifyCommandChanged();
+      execute: async args => {
+        if (args?.filter) {
+          let filter = args.filter as string;
+          await service.pauseOnExceptionsFilter(filter as string);
+        } else {
+          let items: string[] = [];
+          service.session?.exceptionBreakpointFilters?.forEach(
+            availableFilter => {
+              items.push(availableFilter.filter);
+            }
+          );
+          const result = await InputDialog.getMultipleItems({
+            title: trans.__('Select a filter for breakpoints on exception'),
+            items: items,
+            defaults: service.session?.currentExceptionFilters || []
+          });
+
+          let filters = result.button.accept ? result.value : null;
+          if (filters !== null) {
+            await service.pauseOnExceptions(filters);
+          }
+        }
       }
     });
 
@@ -750,7 +978,7 @@ const main: JupyterFrontEndPlugin<void> = {
     }
 
     service.eventMessage.connect((_, event): void => {
-      commands.notifyCommandChanged();
+      notifyCommands(app);
       if (labShell && event.event === 'initialized') {
         labShell.activateById(sidebar.id);
       } else if (
@@ -764,7 +992,7 @@ const main: JupyterFrontEndPlugin<void> = {
     });
 
     service.sessionChanged.connect(_ => {
-      commands.notifyCommandChanged();
+      notifyCommands(app);
     });
 
     if (restorer) {
@@ -774,7 +1002,16 @@ const main: JupyterFrontEndPlugin<void> = {
     sidebar.node.setAttribute('role', 'region');
     sidebar.node.setAttribute('aria-label', trans.__('Debugger section'));
 
-    shell.add(sidebar, 'right');
+    sidebar.title.caption = trans.__('Debugger');
+
+    shell.add(sidebar, 'right', { type: 'Debugger' });
+
+    commands.addCommand(CommandIDs.showPanel, {
+      label: trans.__('Debugger Panel'),
+      execute: () => {
+        shell.activateById(sidebar.id);
+      }
+    });
 
     if (palette) {
       const category = trans.__('Debugger');
@@ -785,35 +1022,14 @@ const main: JupyterFrontEndPlugin<void> = {
         CommandIDs.stepIn,
         CommandIDs.stepOut,
         CommandIDs.evaluate,
-        CommandIDs.pause
+        CommandIDs.pauseOnExceptions
       ].forEach(command => {
         palette.addItem({ command, category });
       });
     }
 
-    if (debuggerSources) {
+    if (sourceViewer) {
       const { model } = service;
-      const readOnlyEditorFactory = new Debugger.ReadOnlyEditorFactory({
-        editorServices
-      });
-
-      const onCurrentFrameChanged = (
-        _: IDebugger.Model.ICallstack,
-        frame: IDebugger.IStackFrame
-      ): void => {
-        debuggerSources
-          .find({
-            focus: true,
-            kernel: service.session?.connection?.kernel?.name ?? '',
-            path: service.session?.connection?.path ?? '',
-            source: frame?.source?.path ?? ''
-          })
-          .forEach(editor => {
-            requestAnimationFrame(() => {
-              Debugger.EditorHandler.showCurrentLine(editor, frame.line);
-            });
-          });
-      };
       const onKernelSourceOpened = (
         _: IDebugger.Model.IKernelSources | null,
         source: IDebugger.Source,
@@ -822,69 +1038,14 @@ const main: JupyterFrontEndPlugin<void> = {
         if (!source) {
           return;
         }
-        onCurrentSourceOpened(null, source, breakpoint);
+        sourceViewer.open(source, breakpoint);
       };
 
-      const onCurrentSourceOpened = (
-        _: IDebugger.Model.ISources | null,
-        source: IDebugger.Source,
-        breakpoint?: IDebugger.IBreakpoint
-      ): void => {
-        if (!source) {
-          return;
+      model.sources.currentSourceOpened.connect(
+        (_: IDebugger.Model.ISources | null, source: IDebugger.Source) => {
+          sourceViewer.open(source);
         }
-        const { content, mimeType, path } = source;
-        const results = debuggerSources.find({
-          focus: true,
-          kernel: service.session?.connection?.kernel?.name ?? '',
-          path: service.session?.connection?.path ?? '',
-          source: path
-        });
-        if (results.length > 0) {
-          if (breakpoint && typeof breakpoint.line !== 'undefined') {
-            results.forEach(editor => {
-              if (editor instanceof CodeMirrorEditor) {
-                (editor as CodeMirrorEditor).scrollIntoViewCentered({
-                  line: (breakpoint.line as number) - 1,
-                  ch: breakpoint.column || 0
-                });
-              } else {
-                editor.revealPosition({
-                  line: (breakpoint.line as number) - 1,
-                  column: breakpoint.column || 0
-                });
-              }
-            });
-          }
-          return;
-        }
-        const editorWrapper = readOnlyEditorFactory.createNewEditor({
-          content,
-          mimeType,
-          path
-        });
-        const editor = editorWrapper.editor;
-        const editorHandler = new Debugger.EditorHandler({
-          debuggerService: service,
-          editor,
-          path
-        });
-        editorWrapper.disposed.connect(() => editorHandler.dispose());
-
-        debuggerSources.open({
-          label: PathExt.basename(path),
-          caption: path,
-          editorWrapper
-        });
-
-        const frame = service.model.callstack.frame;
-        if (frame) {
-          Debugger.EditorHandler.showCurrentLine(editor, frame.line);
-        }
-      };
-
-      model.callstack.currentFrameChanged.connect(onCurrentFrameChanged);
-      model.sources.currentSourceOpened.connect(onCurrentSourceOpened);
+      );
       model.kernelSources.kernelSourceOpened.connect(onKernelSourceOpened);
       model.breakpoints.clicked.connect(async (_, breakpoint) => {
         const path = breakpoint.source?.path;
@@ -892,7 +1053,7 @@ const main: JupyterFrontEndPlugin<void> = {
           sourceReference: 0,
           path
         });
-        onCurrentSourceOpened(null, source, breakpoint);
+        sourceViewer.open(source, breakpoint);
       });
     }
   }
@@ -910,6 +1071,7 @@ const plugins: JupyterFrontEndPlugin<any>[] = [
   sidebar,
   main,
   sources,
+  sourceViewer,
   configuration
 ];
 

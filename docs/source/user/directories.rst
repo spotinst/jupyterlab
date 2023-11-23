@@ -1,3 +1,6 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 
 Advanced Usage
 ==============
@@ -38,16 +41,7 @@ shipped with the Python package, you can launch as
 
 The build process uses a specific ``yarn`` version with a default working
 combination of npm packages stored in a ``yarn.lock`` file shipped with
-JupyterLab. Those package source urls point to the default yarn registry.
-However, if you defined your own yarn registry in the yarn configuration, the
-default yarn registry will be replaced by your custom registry. If you then
-switch back to the default yarn registry, you will need to clean your
-``staging`` folder before building:
-
-.. code:: bash
-
-    jupyter lab clean
-    jupyter lab build
+JupyterLab.
 
 
 Disabling Rebuild Checks
@@ -81,7 +75,7 @@ LabConfig Directories
 ---------------------
 For each config path ``<jupyter_config_path>`` listed in ``jupyter --paths``, the ``<jupyter_config_path>/labconfig`` directory contains configuration data. This configuration data from all of these directories is combined into a single configuration, with priority order given by ``jupyter --paths``.
 
-The primary file used by JupyterLab is ``page_config.json``.  
+The primary file used by JupyterLab is ``page_config.json``.
 The ``page_config.json`` data is used to provide configuration data to the
 application environment.
 
@@ -322,4 +316,3 @@ environments. The location can be modified using the
 
 These files can be imported and exported to create default "profiles", using
 the :ref:`workspace command line tool <url-workspaces-cli>`.
-

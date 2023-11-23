@@ -106,6 +106,8 @@ export namespace Debugger {
 
     export const next = 'debugger:next';
 
+    export const showPanel = 'debugger:show-panel';
+
     export const stepIn = 'debugger:stepIn';
 
     export const stepOut = 'debugger:stepOut';
@@ -118,7 +120,13 @@ export namespace Debugger {
 
     export const restartDebug = 'debugger:restart-debug';
 
-    export const pause = 'debugger:pause';
+    export const pauseOnExceptions = 'debugger:pause-on-exceptions';
+
+    export const copyToClipboard = 'debugger:copy-to-clipboard';
+
+    export const copyToGlobals = 'debugger:copy-to-globals';
+
+    export const openSource = 'debugger:open-source';
   }
 
   /**

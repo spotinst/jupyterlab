@@ -1,6 +1,11 @@
+/*
+ * Copyright (c) Jupyter Development Team.
+ * Distributed under the terms of the Modified BSD License.
+ */
+
+/* eslint-disable camelcase */
 import * as fs from 'fs-extra';
 import * as child_process from 'child_process';
-import * as crypto from 'crypto';
 import * as path from 'path';
 import * as os from 'os';
 import * as ps from 'process';
@@ -29,7 +34,11 @@ async function startLocalRegistry(out_dir: string, port = DEFAULT_PORT) {
   let prev_npm = utils.run('npm config get registry', { stdio: 'pipe' }, true);
   let prev_yarn = '';
   try {
-    prev_yarn = utils.run('yarn config get registry', { stdio: 'pipe' }, true);
+    prev_yarn = utils.run(
+      'yarn config get npmRegistryServer',
+      { stdio: 'pipe' },
+      true
+    );
   } catch (e) {
     // Do nothing
   }
@@ -131,7 +140,19 @@ packages:
     local_registry
   ]);
   try {
-    child_process.execSync(`yarn config set registry "${local_registry}"`);
+    child_process.execFileSync('yarn', [
+      'config',
+      'set',
+      'npmRegistryServer',
+      local_registry
+    ]);
+    child_process.execFileSync('yarn', [
+      'config',
+      'set',
+      'unsafeHttpWhitelist',
+      '--json',
+      '["0.0.0.0"]'
+    ]);
   } catch (e) {
     // yarn not available
   }
@@ -218,43 +239,18 @@ async function stopLocalRegistry(out_dir: string) {
     child_process.execSync(`npm config rm registry`);
   }
   if (data.prev_yarn) {
-    child_process.execSync(`yarn config set registry ${data.prev_yarn}`);
+    child_process.execSync(
+      `yarn config set npmRegistryServer ${data.prev_yarn}`
+    );
+    child_process.execSync(`yarn config unset unsafeHttpWhitelist`);
   } else {
     try {
-      child_process.execSync(`yarn config delete registry`);
+      child_process.execSync(`yarn config unset npmRegistryServer`);
+      child_process.execSync(`yarn config unset unsafeHttpWhitelist`);
     } catch (e) {
       // yarn not available
     }
   }
-}
-
-/**
- * Fix the yarn lock links in the given directory.
- */
-function fixLinks(package_dir: string) {
-  let yarn_reg = '';
-  try {
-    yarn_reg = utils.run('yarn config get registry', { stdio: 'pipe' }, true);
-  } catch (e) {
-    // Do nothing
-  }
-  yarn_reg = yarn_reg || 'https://registry.yarnpkg.com';
-  const lock_file = path.join(package_dir, 'yarn.lock');
-  console.log(`Fixing links in ${lock_file}`);
-  const content = fs.readFileSync(lock_file, { encoding: 'utf-8' });
-
-  let shasum = crypto.createHash('sha256');
-  let hash = shasum.update(content);
-  console.log('Prior hash', hash.digest('hex'));
-
-  const regex = /http\:\/\/0\.0\.0\.0\:\d+/g;
-  const new_content = content.replace(regex, yarn_reg);
-
-  shasum = crypto.createHash('sha256');
-  hash = shasum.update(new_content);
-  console.log('After hash', hash.digest('hex'));
-
-  fs.writeFileSync(lock_file, new_content, 'utf8');
 }
 
 /**
@@ -283,7 +279,7 @@ program
   .option('--port <port>', 'Port to use for the registry')
   .option('--path <path>', 'Path to use for the registry')
   .action(async (options: any) => {
-    utils.exitOnUuncaughtException();
+    utils.exitOnUncaughtException();
     const out_dir = options.path || DEFAULT_OUT_DIR;
     await startLocalRegistry(out_dir, options.port || DEFAULT_PORT);
   });
@@ -292,24 +288,16 @@ program
   .command('stop')
   .option('--path <path>', 'Path to use for the registry')
   .action(async (options: any) => {
-    utils.exitOnUuncaughtException();
+    utils.exitOnUncaughtException();
     const out_dir = options.path || DEFAULT_OUT_DIR;
     await stopLocalRegistry(out_dir);
-  });
-
-program
-  .command('fix-links')
-  .option('--path <path>', 'Path to the directory with a yarn lock')
-  .action((options: any) => {
-    utils.exitOnUuncaughtException();
-    fixLinks(options.path || process.cwd());
   });
 
 program
   .command('publish-dists')
   .option('--path <path>', 'Path to the directory with npm tar balls')
   .action((options: any) => {
-    utils.exitOnUuncaughtException();
+    utils.exitOnUncaughtException();
     publishPackages(options.path || process.cwd());
   });
 
