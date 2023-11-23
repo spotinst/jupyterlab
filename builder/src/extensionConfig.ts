@@ -32,7 +32,7 @@ function generateConfig({
 }: IOptions = {}): webpack.Configuration[] {
   const data = require(path.join(packagePath, 'package.json'));
 
-  const ajv = new Ajv({ useDefaults: true });
+  const ajv = new Ajv({ useDefaults: true, strict: false });
   const validate = ajv.compile(require('../metadata_schema.json'));
   let valid = validate(data.jupyterlab ?? {});
   if (!valid) {
@@ -251,13 +251,13 @@ function generateConfig({
     filename += '?v=[contenthash]';
   }
 
-  const rules: any = [{ test: /\.html$/, type: 'file-loader' }];
+  const rules: any = [{ test: /\.html$/, type: 'asset/resource' }];
 
   if (mode === 'development') {
     rules.push({
       test: /\.js$/,
       enforce: 'pre',
-      use: ['source-map-loader']
+      use: [require.resolve('source-map-loader')]
     });
   }
 
@@ -286,7 +286,14 @@ function generateConfig({
 
   if (mode === 'development') {
     const logPath = path.join(outputPath, 'build_log.json');
-    fs.writeFileSync(logPath, JSON.stringify(config, null, '  '));
+    function regExpReplacer(key: any, value: any) {
+      if (value instanceof RegExp) {
+        return value.toString();
+      } else {
+        return value;
+      }
+    }
+    fs.writeFileSync(logPath, JSON.stringify(config, regExpReplacer, '  '));
   }
   return config;
 }

@@ -9,7 +9,8 @@ import {
   ILabShell,
   ILabStatus,
   JupyterFrontEnd,
-  JupyterFrontEndPlugin
+  JupyterFrontEndPlugin,
+  JupyterLab
 } from '@jupyterlab/application';
 import {
   addCommandToolbarButtonClass,
@@ -19,6 +20,7 @@ import {
   InputDialog,
   ISessionContextDialogs,
   ReactWidget,
+  SessionContextDialogs,
   showDialog,
   showErrorMessage,
   UseSignal
@@ -27,22 +29,26 @@ import { IChangedArgs, PathExt, Time } from '@jupyterlab/coreutils';
 import {
   DocumentManager,
   IDocumentManager,
+  IDocumentWidgetOpener,
   PathStatus,
   renameDialog,
   SavingStatus
 } from '@jupyterlab/docmanager';
-import { IDocumentProviderFactory } from '@jupyterlab/docprovider';
 import { DocumentRegistry, IDocumentWidget } from '@jupyterlab/docregistry';
 import { Contents, Kernel } from '@jupyterlab/services';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { IStatusBar } from '@jupyterlab/statusbar';
-import { ITranslator, TranslationBundle } from '@jupyterlab/translation';
+import {
+  ITranslator,
+  nullTranslator,
+  TranslationBundle
+} from '@jupyterlab/translation';
 import { saveIcon } from '@jupyterlab/ui-components';
-import { each, map, some, toArray } from '@lumino/algorithm';
+import { some } from '@lumino/algorithm';
 import { CommandRegistry } from '@lumino/commands';
 import { JSONExt } from '@lumino/coreutils';
 import { IDisposable } from '@lumino/disposable';
-import { ISignal } from '@lumino/signaling';
+import { ISignal, Signal } from '@lumino/signaling';
 import { Widget } from '@lumino/widgets';
 import * as React from 'react';
 
@@ -66,6 +72,8 @@ namespace CommandIDs {
 
   export const del = 'docmanager:delete';
 
+  export const duplicate = 'docmanager:duplicate';
+
   export const restoreCheckpoint = 'docmanager:restore-checkpoint';
 
   export const save = 'docmanager:save';
@@ -87,34 +95,18 @@ namespace CommandIDs {
 const docManagerPluginId = '@jupyterlab/docmanager-extension:plugin';
 
 /**
- * The default document manager provider.
+ * A plugin to open documents in the main area.
+ *
  */
-const docManagerPlugin: JupyterFrontEndPlugin<IDocumentManager> = {
-  id: docManagerPluginId,
-  provides: IDocumentManager,
-  requires: [ISettingRegistry, ITranslator],
-  optional: [
-    ILabStatus,
-    ICommandPalette,
-    ILabShell,
-    ISessionContextDialogs,
-    IDocumentProviderFactory
-  ],
-  activate: (
-    app: JupyterFrontEnd,
-    settingRegistry: ISettingRegistry,
-    translator: ITranslator,
-    status: ILabStatus | null,
-    palette: ICommandPalette | null,
-    labShell: ILabShell | null,
-    sessionDialogs: ISessionContextDialogs | null,
-    docProviderFactory: IDocumentProviderFactory | null
-  ): IDocumentManager => {
-    const trans = translator.load('jupyterlab');
-    const manager = app.serviceManager;
-    const contexts = new WeakSet<DocumentRegistry.Context>();
-    const opener: DocumentManager.IWidgetOpener = {
-      open: (widget, options) => {
+const openerPlugin: JupyterFrontEndPlugin<IDocumentWidgetOpener> = {
+  id: '@jupyterlab/docmanager-extension:opener',
+  description: 'Provides the widget opener.',
+  autoStart: true,
+  provides: IDocumentWidgetOpener,
+  activate: (app: JupyterFrontEnd) => {
+    const { shell } = app;
+    return new (class {
+      open(widget: IDocumentWidget, options?: DocumentRegistry.IOpenOptions) {
         if (!widget.id) {
           widget.id = `document-manager-${++Private.id}`;
         }
@@ -123,39 +115,120 @@ const docManagerPlugin: JupyterFrontEndPlugin<IDocumentManager> = {
           ...widget.title.dataset
         };
         if (!widget.isAttached) {
-          app.shell.add(widget, 'main', options || {});
+          shell.add(widget, 'main', options || {});
         }
-        app.shell.activateById(widget.id);
-
-        // Handle dirty state for open documents.
-        const context = docManager.contextForWidget(widget);
-        if (context && !contexts.has(context)) {
-          if (status) {
-            handleContext(status, context);
-          }
-          contexts.add(context);
-        }
+        shell.activateById(widget.id);
+        this._opened.emit(widget);
       }
-    };
-    const registry = app.docRegistry;
+
+      get opened() {
+        return this._opened;
+      }
+
+      private _opened = new Signal<this, IDocumentWidget>(this);
+    })();
+  }
+};
+
+/**
+ * A plugin to handle dirty states for open documents.
+ */
+const contextsPlugin: JupyterFrontEndPlugin<void> = {
+  id: '@jupyterlab/docmanager-extension:contexts',
+  description: 'Adds the handling of opened documents dirty state.',
+  autoStart: true,
+  requires: [IDocumentManager, IDocumentWidgetOpener],
+  optional: [ILabStatus],
+  activate: (
+    app: JupyterFrontEnd,
+    docManager: IDocumentManager,
+    widgetOpener: IDocumentWidgetOpener,
+    status: ILabStatus
+  ) => {
+    const contexts = new WeakSet<DocumentRegistry.Context>();
+    widgetOpener.opened.connect((_, widget) => {
+      // Handle dirty state for open documents.
+      const context = docManager.contextForWidget(widget);
+      if (context && !contexts.has(context)) {
+        if (status) {
+          handleContext(status, context);
+        }
+        contexts.add(context);
+      }
+    });
+  }
+};
+
+/**
+ * A plugin providing the default document manager.
+ */
+const manager: JupyterFrontEndPlugin<IDocumentManager> = {
+  id: '@jupyterlab/docmanager-extension:manager',
+  description: 'Provides the document manager.',
+  provides: IDocumentManager,
+  requires: [IDocumentWidgetOpener],
+  optional: [ITranslator, ILabStatus, ISessionContextDialogs, JupyterLab.IInfo],
+  activate: (
+    app: JupyterFrontEnd,
+    widgetOpener: IDocumentWidgetOpener,
+    translator_: ITranslator | null,
+    status: ILabStatus | null,
+    sessionDialogs_: ISessionContextDialogs | null,
+    info: JupyterLab.IInfo | null
+  ) => {
+    const { serviceManager: manager, docRegistry: registry } = app;
+    const translator = translator_ ?? nullTranslator;
+    const sessionDialogs =
+      sessionDialogs_ ?? new SessionContextDialogs({ translator });
     const when = app.restored.then(() => void 0);
+
     const docManager = new DocumentManager({
       registry,
       manager,
-      opener,
+      opener: widgetOpener,
       when,
       setBusy: (status && (() => status.setBusy())) ?? undefined,
-      sessionDialogs: sessionDialogs || undefined,
-      translator,
-      collaborative: true,
-      docProviderFactory: docProviderFactory ?? undefined
+      sessionDialogs,
+      translator: translator ?? nullTranslator,
+      isConnectedCallback: () => {
+        if (info) {
+          return info.isConnected;
+        }
+        return true;
+      }
     });
+
+    return docManager;
+  }
+};
+
+/**
+ * The default document manager provider commands and settings.
+ */
+const docManagerPlugin: JupyterFrontEndPlugin<void> = {
+  id: docManagerPluginId,
+  description: 'Adds commands and settings to the document manager.',
+  autoStart: true,
+  requires: [IDocumentManager, IDocumentWidgetOpener, ISettingRegistry],
+  optional: [ITranslator, ICommandPalette, ILabShell],
+  activate: (
+    app: JupyterFrontEnd,
+    docManager: IDocumentManager,
+    widgetOpener: IDocumentWidgetOpener,
+    settingRegistry: ISettingRegistry,
+    translator: ITranslator | null,
+    palette: ICommandPalette | null,
+    labShell: ILabShell | null
+  ): void => {
+    translator = translator ?? nullTranslator;
+    const trans = translator.load('jupyterlab');
+    const registry = app.docRegistry;
 
     // Register the file operations commands.
     addCommands(
       app,
       docManager,
-      opener,
+      widgetOpener,
       settingRegistry,
       translator,
       labShell,
@@ -207,7 +280,7 @@ const docManagerPlugin: JupyterFrontEndPlugin<IDocumentManager> = {
       });
       // Set the default factory overrides. If not provided, this has the
       // effect of unsetting any previous overrides.
-      each(registry.fileTypes(), ft => {
+      for (const ft of registry.fileTypes()) {
         try {
           registry.setDefaultWidgetFactory(ft.name, overrides[ft.name]);
         } catch {
@@ -217,7 +290,7 @@ const docManagerPlugin: JupyterFrontEndPlugin<IDocumentManager> = {
             }`
           );
         }
-      });
+      }
     };
 
     // Fetch the initial state of the settings.
@@ -260,11 +333,11 @@ const docManagerPlugin: JupyterFrontEndPlugin<IDocumentManager> = {
     settingRegistry.transform(docManagerPluginId, {
       fetch: plugin => {
         // Get the available file types.
-        const fileTypes = toArray(registry.fileTypes())
+        const fileTypes = Array.from(registry.fileTypes())
           .map(ft => ft.name)
           .join('    \n');
         // Get the available widget factories.
-        const factories = toArray(registry.widgetFactories())
+        const factories = Array.from(registry.widgetFactories())
           .map(f => f.name)
           .join('    \n');
         // Generate the help string.
@@ -295,9 +368,9 @@ Available file types:
 
     // If the document registry gains or loses a factory or file type,
     // regenerate the settings description with the available options.
-    registry.changed.connect(() => settingRegistry.reload(docManagerPluginId));
-
-    return docManager;
+    registry.changed.connect(() =>
+      settingRegistry.load(docManagerPluginId, true)
+    );
   }
 };
 
@@ -306,21 +379,25 @@ Available file types:
  */
 export const savingStatusPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/docmanager-extension:saving-status',
+  description: 'Adds a saving status indicator.',
   autoStart: true,
-  requires: [IDocumentManager, ILabShell, ITranslator],
-  optional: [IStatusBar],
+  requires: [IDocumentManager, ILabShell],
+  optional: [ITranslator, IStatusBar],
   activate: (
     _: JupyterFrontEnd,
     docManager: IDocumentManager,
     labShell: ILabShell,
-    translator: ITranslator,
+    translator: ITranslator | null,
     statusBar: IStatusBar | null
   ) => {
     if (!statusBar) {
       // Automatically disable if statusbar missing
       return;
     }
-    const saving = new SavingStatus({ docManager, translator });
+    const saving = new SavingStatus({
+      docManager,
+      translator: translator ?? nullTranslator
+    });
 
     // Keep the currently active widget synchronized.
     saving.model!.widget = labShell.currentWidget;
@@ -342,6 +419,7 @@ export const savingStatusPlugin: JupyterFrontEndPlugin<void> = {
  */
 export const pathStatusPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/docmanager-extension:path-status',
+  description: 'Adds a file path indicator in the status bar.',
   autoStart: true,
   requires: [IDocumentManager, ILabShell],
   optional: [IStatusBar],
@@ -376,16 +454,17 @@ export const pathStatusPlugin: JupyterFrontEndPlugin<void> = {
  */
 export const downloadPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/docmanager-extension:download',
+  description: 'Adds command to download files.',
   autoStart: true,
-  requires: [ITranslator, IDocumentManager],
-  optional: [ICommandPalette],
+  requires: [IDocumentManager],
+  optional: [ITranslator, ICommandPalette],
   activate: (
     app: JupyterFrontEnd,
-    translator: ITranslator,
     docManager: IDocumentManager,
+    translator: ITranslator | null,
     palette: ICommandPalette | null
   ) => {
-    const trans = translator.load('jupyterlab');
+    const trans = (translator ?? nullTranslator).load('jupyterlab');
     const { commands, shell } = app;
     const isEnabled = () => {
       const { currentWidget } = shell;
@@ -403,7 +482,7 @@ export const downloadPlugin: JupyterFrontEndPlugin<void> = {
             return showDialog({
               title: trans.__('Cannot Download'),
               body: trans.__('No context found for current widget!'),
-              buttons: [Dialog.okButton({ label: trans.__('OK') })]
+              buttons: [Dialog.okButton()]
             });
           }
           return context.download();
@@ -429,14 +508,16 @@ export const downloadPlugin: JupyterFrontEndPlugin<void> = {
  */
 export const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/docmanager-extension:open-browser-tab',
+  description: 'Adds command to open a browser tab.',
   autoStart: true,
-  requires: [ITranslator, IDocumentManager],
+  requires: [IDocumentManager],
+  optional: [ITranslator],
   activate: (
     app: JupyterFrontEnd,
-    translator: ITranslator,
-    docManager: IDocumentManager
+    docManager: IDocumentManager,
+    translator: ITranslator | null
   ) => {
-    const trans = translator.load('jupyterlab');
+    const trans = (translator ?? nullTranslator).load('jupyterlab');
     const { commands } = app;
     commands.addCommand(CommandIDs.openBrowserTab, {
       execute: args => {
@@ -457,7 +538,7 @@ export const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
           }
         });
       },
-      icon: args => (args['icon'] as string) || '',
+      iconClass: args => (args['icon'] as string) || '',
       label: () => trans.__('Open in New Browser Tab')
     });
   }
@@ -467,11 +548,14 @@ export const openBrowserTabPlugin: JupyterFrontEndPlugin<void> = {
  * Export the plugins as default.
  */
 const plugins: JupyterFrontEndPlugin<any>[] = [
+  manager,
   docManagerPlugin,
+  contextsPlugin,
   pathStatusPlugin,
   savingStatusPlugin,
   downloadPlugin,
-  openBrowserTabPlugin
+  openBrowserTabPlugin,
+  openerPlugin
 ];
 export default plugins;
 
@@ -485,7 +569,7 @@ export namespace ToolbarItems {
    */
   export function createSaveButton(
     commands: CommandRegistry,
-    fileChanged: ISignal<any, Contents.IModel>
+    fileChanged: ISignal<any, Omit<Contents.IModel, 'content'>>
   ): Widget {
     return addCommandToolbarButtonClass(
       ReactWidget.create(
@@ -539,7 +623,7 @@ function fileType(widget: Widget | null, docManager: IDocumentManager): string {
 function addCommands(
   app: JupyterFrontEnd,
   docManager: IDocumentManager,
-  opener: DocumentManager.IWidgetOpener,
+  widgetOpener: IDocumentWidgetOpener,
   settingRegistry: ISettingRegistry,
   translator: ITranslator,
   labShell: ILabShell | null,
@@ -564,7 +648,7 @@ function addCommands(
 
   // If inside a rich application like JupyterLab, add additional functionality.
   if (labShell) {
-    addLabCommands(app, docManager, labShell, opener, translator);
+    addLabCommands(app, docManager, labShell, widgetOpener, translator);
   }
 
   commands.addCommand(CommandIDs.deleteFile, {
@@ -583,7 +667,6 @@ function addCommands(
 
   commands.addCommand(CommandIDs.newUntitled, {
     execute: args => {
-      // FIXME-TRANS: Localizing args['error']?
       const errorTitle = (args['error'] as string) || trans.__('Error');
       const path =
         typeof args['path'] === 'undefined' ? '' : (args['path'] as string);
@@ -608,15 +691,17 @@ function addCommands(
       const path =
         typeof args['path'] === 'undefined' ? '' : (args['path'] as string);
       const factory = (args['factory'] as string) || void 0;
-      const kernel = (args?.kernel as unknown) as Kernel.IModel | undefined;
+      const kernel = args?.kernel as unknown as Kernel.IModel | undefined;
       const options =
         (args['options'] as DocumentRegistry.IOpenOptions) || void 0;
       return docManager.services.contents
         .get(path, { content: false })
         .then(() => docManager.openOrReveal(path, factory, kernel, options));
     },
-    icon: args => (args['icon'] as string) || '',
-    label: args => (args['label'] || args['factory']) as string,
+    iconClass: args => (args['icon'] as string) || '',
+    label: args =>
+      ((args['label'] || args['factory']) ??
+        trans.__('Open the provided `path`.')) as string,
     mnemonic: args => (args['mnemonic'] as number) || -1
   });
 
@@ -639,7 +724,7 @@ function addCommands(
         return showDialog({
           title: trans.__('Cannot Reload'),
           body: trans.__('No context found for current widget!'),
-          buttons: [Dialog.okButton({ label: trans.__('Ok') })]
+          buttons: [Dialog.okButton()]
         });
       }
       if (context.model.dirty) {
@@ -650,7 +735,7 @@ function addCommands(
             type
           ),
           buttons: [
-            Dialog.cancelButton({ label: trans.__('Cancel') }),
+            Dialog.cancelButton(),
             Dialog.warnButton({ label: trans.__('Reload') })
           ]
         }).then(result => {
@@ -669,7 +754,7 @@ function addCommands(
   commands.addCommand(CommandIDs.restoreCheckpoint, {
     label: () =>
       trans.__(
-        'Revert %1 to Checkpoint',
+        'Revert %1 to Checkpoint…',
         fileType(shell.currentWidget, docManager)
       ),
     caption: trans.__('Revert contents to previous checkpoint'),
@@ -684,24 +769,35 @@ function addCommands(
         return showDialog({
           title: trans.__('Cannot Revert'),
           body: trans.__('No context found for current widget!'),
-          buttons: [Dialog.okButton({ label: trans.__('Ok') })]
+          buttons: [Dialog.okButton()]
         });
       }
-      return context.listCheckpoints().then(checkpoints => {
-        if (checkpoints.length < 1) {
-          return;
-        }
-        const lastCheckpoint = checkpoints[checkpoints.length - 1];
-        if (!lastCheckpoint) {
-          return;
-        }
+      return context.listCheckpoints().then(async checkpoints => {
         const type = fileType(shell.currentWidget, docManager);
+        if (checkpoints.length < 1) {
+          await showErrorMessage(
+            trans.__('No checkpoints'),
+            trans.__('No checkpoints are available for this %1.', type)
+          );
+          return;
+        }
+        const targetCheckpoint =
+          checkpoints.length === 1
+            ? checkpoints[0]
+            : await Private.getTargetCheckpoint(checkpoints.reverse(), trans);
+
+        if (!targetCheckpoint) {
+          return;
+        }
         return showDialog({
           title: trans.__('Revert %1 to checkpoint', type),
-          body: new RevertConfirmWidget(lastCheckpoint, trans, type),
+          body: new RevertConfirmWidget(targetCheckpoint, trans, type),
           buttons: [
-            Dialog.cancelButton({ label: trans.__('Cancel') }),
-            Dialog.warnButton({ label: trans.__('Revert') })
+            Dialog.cancelButton(),
+            Dialog.warnButton({
+              label: trans.__('Revert'),
+              ariaLabel: trans.__('Revert to Checkpoint')
+            })
           ]
         }).then(result => {
           if (context.isDisposed) {
@@ -711,7 +807,9 @@ function addCommands(
             if (context.model.readOnly) {
               return context.revert();
             }
-            return context.restoreCheckpoint().then(() => context.revert());
+            return context
+              .restoreCheckpoint(targetCheckpoint.id)
+              .then(() => context.revert());
           }
         });
       });
@@ -736,7 +834,7 @@ function addCommands(
   commands.addCommand(CommandIDs.save, {
     label: () => trans.__('Save %1', fileType(shell.currentWidget, docManager)),
     caption,
-    icon: args => (args.toolbar ? saveIcon : ''),
+    icon: args => (args.toolbar ? saveIcon : undefined),
     isEnabled: isWritable,
     execute: async () => {
       // Checks that shell.currentWidget is valid:
@@ -747,7 +845,7 @@ function addCommands(
           return showDialog({
             title: trans.__('Cannot Save'),
             body: trans.__('No context found for current widget!'),
-            buttons: [Dialog.okButton({ label: trans.__('Ok') })]
+            buttons: [Dialog.okButton()]
           });
         } else {
           if (saveInProgress.has(context)) {
@@ -758,7 +856,7 @@ function addCommands(
             return showDialog({
               title: trans.__('Cannot Save'),
               body: trans.__('Document is read-only'),
-              buttons: [Dialog.okButton({ label: trans.__('Ok') })]
+              buttons: [Dialog.okButton()]
             });
           }
 
@@ -840,20 +938,20 @@ function addCommands(
     caption: trans.__('Save all open documents'),
     isEnabled: () => {
       return some(
-        map(shell.widgets('main'), w => docManager.contextForWidget(w)),
-        c => c?.contentsModel?.writable ?? false
+        shell.widgets('main'),
+        w => docManager.contextForWidget(w)?.contentsModel?.writable ?? false
       );
     },
     execute: () => {
       const promises: Promise<void>[] = [];
       const paths = new Set<string>(); // Cache so we don't double save files.
-      each(shell.widgets('main'), widget => {
+      for (const widget of shell.widgets('main')) {
         const context = docManager.contextForWidget(widget);
         if (context && !context.model.readOnly && !paths.has(context.path)) {
           paths.add(context.path);
           promises.push(context.save());
         }
-      });
+      }
       return Promise.all(promises);
     }
   });
@@ -871,7 +969,7 @@ function addCommands(
           return showDialog({
             title: trans.__('Cannot Save'),
             body: trans.__('No context found for current widget!'),
-            buttons: [Dialog.okButton({ label: trans.__('Ok') })]
+            buttons: [Dialog.okButton()]
           });
         }
 
@@ -922,7 +1020,8 @@ function addCommands(
       CommandIDs.restoreCheckpoint,
       CommandIDs.save,
       CommandIDs.saveAs,
-      CommandIDs.toggleAutosave
+      CommandIDs.toggleAutosave,
+      CommandIDs.duplicate
     ].forEach(command => {
       palette.addItem({ command, category });
     });
@@ -933,7 +1032,7 @@ function addLabCommands(
   app: JupyterFrontEnd,
   docManager: IDocumentManager,
   labShell: ILabShell,
-  opener: DocumentManager.IWidgetOpener,
+  widgetOpener: IDocumentWidgetOpener,
   translator: ITranslator
 ): void {
   const trans = translator.load('jupyterlab');
@@ -974,7 +1073,7 @@ function addLabCommands(
       // Clone the widget.
       const child = docManager.cloneWidget(widget);
       if (child) {
-        opener.open(child, options);
+        widgetOpener.open(child, options);
       }
     }
   });
@@ -992,7 +1091,22 @@ function addLabCommands(
       // Implies contextMenuWidget() !== null
       if (isEnabled()) {
         const context = docManager.contextForWidget(contextMenuWidget()!);
-        return renameDialog(docManager, context!.path);
+        return renameDialog(docManager, context!);
+      }
+    }
+  });
+
+  commands.addCommand(CommandIDs.duplicate, {
+    label: () =>
+      trans.__('Duplicate %1', fileType(contextMenuWidget(), docManager)),
+    isEnabled,
+    execute: () => {
+      if (isEnabled()) {
+        const context = docManager.contextForWidget(contextMenuWidget()!);
+        if (!context) {
+          return;
+        }
+        return docManager.duplicate(context.path);
       }
     }
   });
@@ -1012,7 +1126,7 @@ function addLabCommands(
           title: trans.__('Delete'),
           body: trans.__('Are you sure you want to delete %1', context.path),
           buttons: [
-            Dialog.cancelButton({ label: trans.__('Cancel') }),
+            Dialog.cancelButton(),
             Dialog.warnButton({ label: trans.__('Delete') })
           ]
         });
@@ -1094,7 +1208,7 @@ namespace Private {
     const confirmMessage = document.createElement('p');
     const confirmText = document.createTextNode(
       trans.__(
-        'Are you sure you want to revert the %1 to the latest checkpoint? ',
+        'Are you sure you want to revert the %1 to checkpoint? ',
         fileType
       )
     );
@@ -1112,10 +1226,7 @@ namespace Private {
     const date = new Date(checkpoint.last_modified);
     lastCheckpointDate.style.textAlign = 'center';
     lastCheckpointDate.textContent =
-      Time.format(date, 'dddd, MMMM Do YYYY, h:mm:ss a') +
-      ' (' +
-      Time.formatHuman(date) +
-      ')';
+      Time.format(date) + ' (' + Time.formatHuman(date) + ')';
 
     lastCheckpointMessage.appendChild(lastCheckpointText);
     lastCheckpointMessage.appendChild(lastCheckpointDate);
@@ -1123,5 +1234,34 @@ namespace Private {
     body.appendChild(confirmMessage);
     body.appendChild(lastCheckpointMessage);
     return body;
+  }
+
+  /**
+   * Ask user for a checkpoint to revert to.
+   */
+  export async function getTargetCheckpoint(
+    checkpoints: Contents.ICheckpointModel[],
+    trans: TranslationBundle
+  ): Promise<Contents.ICheckpointModel | undefined> {
+    // the id could be too long to show so use the index instead
+    const indexSeparator = '.';
+    const items = checkpoints.map((checkpoint, index) => {
+      const isoDate = Time.format(checkpoint.last_modified);
+      const humanDate = Time.formatHuman(checkpoint.last_modified);
+      return `${index}${indexSeparator} ${isoDate} (${humanDate})`;
+    });
+
+    const selectedItem = (
+      await InputDialog.getItem({
+        items: items,
+        title: trans.__('Choose a checkpoint')
+      })
+    ).value;
+
+    if (!selectedItem) {
+      return;
+    }
+    const selectedIndex = selectedItem.split(indexSeparator, 1)[0];
+    return checkpoints[parseInt(selectedIndex, 10)];
   }
 }

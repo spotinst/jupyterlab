@@ -191,11 +191,9 @@
   margin-bottom: 1px;
   margin-right: 0;
   margin-left: 3px;
-  color: var(--jp-ui-font-color1) !important;
-  background-color: var(--jp-layout-color2) !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  border: none !important;
+  color: var(--jp-ui-font-color1);
+  background-color: var(--jp-layout-color2);
+  border: none;
 }
 
 .jp-toast-button:focus {
@@ -209,8 +207,7 @@
 }
 
 .jp-toast-button:hover {
-  background-color: var(--jp-layout-color3) !important;
-  box-shadow: none !important;
+  background-color: var(--jp-layout-color3);
 }
 
 .jp-toast-button.jp-mod-accept {

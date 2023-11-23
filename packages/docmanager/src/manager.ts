@@ -1,9 +1,8 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { ISessionContext, sessionContextDialogs } from '@jupyterlab/apputils';
+import { ISessionContext, SessionContextDialogs } from '@jupyterlab/apputils';
 import { IChangedArgs, PathExt } from '@jupyterlab/coreutils';
-import { IDocumentProviderFactory } from '@jupyterlab/docprovider';
 import {
   Context,
   DocumentRegistry,
@@ -18,7 +17,7 @@ import { AttachedProperty } from '@lumino/properties';
 import { ISignal, Signal } from '@lumino/signaling';
 import { Widget } from '@lumino/widgets';
 import { SaveHandler } from './savehandler';
-import { IDocumentManager } from './tokens';
+import { IDocumentManager, IDocumentWidgetOpener } from './tokens';
 import { DocumentWidgetManager } from './widgetmanager';
 
 /**
@@ -39,8 +38,10 @@ export class DocumentManager implements IDocumentManager {
     this.translator = options.translator || nullTranslator;
     this.registry = options.registry;
     this.services = options.manager;
-    this._dialogs = options.sessionDialogs || sessionContextDialogs;
-    this._docProviderFactory = options.docProviderFactory;
+    this._dialogs =
+      options.sessionDialogs ??
+      new SessionContextDialogs({ translator: options.translator });
+    this._isConnectedCallback = options.isConnectedCallback || (() => true);
 
     this._opener = options.opener;
     this._when = options.when || options.manager.ready;
@@ -343,6 +344,18 @@ export class DocumentManager implements IDocumentManager {
   }
 
   /**
+   * Duplicate a file.
+   *
+   * @param path - The full path to the file to be duplicated.
+   *
+   * @returns A promise which resolves when the file is duplicated.
+   */
+  duplicate(path: string): Promise<Contents.IModel> {
+    const basePath = PathExt.dirname(path);
+    return this.services.contents.copy(path, basePath);
+  }
+
+  /**
    * See if a widget already exists for the given path and widget name.
    *
    * @param path - The file path to use.
@@ -452,10 +465,13 @@ export class DocumentManager implements IDocumentManager {
   ): IDocumentWidget | undefined {
     const widget = this.findWidget(path, widgetName);
     if (widget) {
-      this._opener.open(widget, options || {});
+      this._opener.open(widget, {
+        type: widgetName,
+        ...options
+      });
       return widget;
     }
-    return this.open(path, widgetName, kernel, options || {});
+    return this.open(path, widgetName, kernel, options ?? {});
   }
 
   /**
@@ -543,25 +559,23 @@ export class DocumentManager implements IDocumentManager {
       options?: DocumentRegistry.IOpenOptions
     ) => {
       this._widgetManager.adoptWidget(context, widget);
+      // TODO should we pass the type for layout customization
       this._opener.open(widget, options);
     };
-    const modelDBFactory =
-      this.services.contents.getModelDBFactory(path) || undefined;
     const context = new Context({
       opener: adopter,
       manager: this.services,
       factory,
       path,
       kernelPreference,
-      modelDBFactory,
       setBusy: this._setBusy,
       sessionDialogs: this._dialogs,
-      docProviderFactory: this._docProviderFactory,
       lastModifiedCheckMargin: this._lastModifiedCheckMargin,
       translator: this.translator
     });
     const handler = new SaveHandler({
       context,
+      isConnectedCallback: this._isConnectedCallback,
       saveInterval: this.autosaveInterval
     });
     Private.saveHandlerProperty.set(context, handler);
@@ -654,7 +668,7 @@ export class DocumentManager implements IDocumentManager {
     }
 
     const widget = this._widgetManager.createWidget(widgetFactory, context);
-    this._opener.open(widget, options || {});
+    this._opener.open(widget, { type: widgetFactory.name, ...options });
 
     // If the initial opening of the context fails, dispose of the widget.
     ready.catch(err => {
@@ -690,7 +704,7 @@ export class DocumentManager implements IDocumentManager {
   protected translator: ITranslator;
   private _activateRequested = new Signal<this, string>(this);
   private _contexts: Private.IContext[] = [];
-  private _opener: DocumentManager.IWidgetOpener;
+  private _opener: IDocumentWidgetOpener;
   private _widgetManager: DocumentWidgetManager;
   private _isDisposed = false;
   private _autosave = true;
@@ -700,7 +714,7 @@ export class DocumentManager implements IDocumentManager {
   private _when: Promise<void>;
   private _setBusy: (() => IDisposable) | undefined;
   private _dialogs: ISessionContext.IDialogs;
-  private _docProviderFactory: IDocumentProviderFactory | undefined;
+  private _isConnectedCallback: () => boolean;
   private _stateChanged = new Signal<DocumentManager, IChangedArgs<any>>(this);
 }
 
@@ -725,7 +739,7 @@ export namespace DocumentManager {
     /**
      * A widget opener for sibling widgets.
      */
-    opener: IWidgetOpener;
+    opener: IDocumentWidgetOpener;
 
     /**
      * A promise for when to start using the manager.
@@ -748,31 +762,10 @@ export namespace DocumentManager {
     translator?: ITranslator;
 
     /**
-     * A factory method for the document provider.
+     * Autosaving should be paused while this callback function returns `false`.
+     * By default, it always returns `true`.
      */
-    docProviderFactory?: IDocumentProviderFactory;
-
-    /**
-     * Whether the context should be collaborative.
-     *
-     * @deprecated It will be removed in 4.0.0. The collaborative feature
-     * is provided by the `DocumentRegistry.IModel` (can be customized by the
-     * `DocumentRegistry.IModelFactory`)
-     */
-    collaborative?: boolean;
-  }
-
-  /**
-   * An interface for a widget opener.
-   */
-  export interface IWidgetOpener {
-    /**
-     * Open the given widget.
-     */
-    open(
-      widget: IDocumentWidget,
-      options?: DocumentRegistry.IOpenOptions
-    ): void;
+    isConnectedCallback?: () => boolean;
   }
 }
 

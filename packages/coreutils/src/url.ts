@@ -30,7 +30,7 @@ export namespace URLExt {
    *
    * @param url - The URL string to parse
    *
-   * @return a hostname string value
+   * @returns a hostname string value
    */
   export function getHostName(url: string): string {
     return urlparse(url).hostname;
@@ -53,10 +53,16 @@ export namespace URLExt {
    * @returns the joined url.
    */
   export function join(...parts: string[]): string {
-    const u = urlparse(parts[0], {});
-    const prefix = `${u.protocol}${u.slashes ? '//' : ''}${u.auth}${
-      u.auth ? '@' : ''
-    }${u.host}`;
+    let u = urlparse(parts[0], {});
+    // Schema-less URL can be only parsed as relative to a base URL
+    // see https://github.com/unshiftio/url-parse/issues/219#issuecomment-1002219326
+    const isSchemaLess = u.protocol === '' && u.slashes;
+    if (isSchemaLess) {
+      u = urlparse(parts[0], 'https:' + parts[0]);
+    }
+    const prefix = `${isSchemaLess ? '' : u.protocol}${u.slashes ? '//' : ''}${
+      u.auth
+    }${u.auth ? '@' : ''}${u.host}`;
     // If there was a prefix, then the first path must start at the root.
     const path = posix.join(
       `${!!prefix && u.pathname[0] !== '/' ? '/' : ''}${u.pathname}`,
@@ -112,23 +118,24 @@ export namespace URLExt {
   /**
    * Return a parsed object that represents the values in a query string.
    */
-  export function queryStringToObject(
-    value: string
-  ): {
+  export function queryStringToObject(value: string): {
     [key: string]: string | undefined;
   } {
     return value
       .replace(/^\?/, '')
       .split('&')
-      .reduce((acc, val) => {
-        const [key, value] = val.split('=');
+      .reduce(
+        (acc, val) => {
+          const [key, value] = val.split('=');
 
-        if (key.length > 0) {
-          acc[key] = decodeURIComponent(value || '');
-        }
+          if (key.length > 0) {
+            acc[key] = decodeURIComponent(value || '');
+          }
 
-        return acc;
-      }, {} as { [key: string]: string });
+          return acc;
+        },
+        {} as { [key: string]: string }
+      );
   }
 
   /**

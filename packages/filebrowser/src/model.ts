@@ -1,7 +1,7 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { Dialog, IScore, showDialog } from '@jupyterlab/apputils';
+import { Dialog, showDialog } from '@jupyterlab/apputils';
 import { IChangedArgs, PageConfig, PathExt } from '@jupyterlab/coreutils';
 import { IDocumentManager, shouldOverwrite } from '@jupyterlab/docmanager';
 import { Contents, KernelSpec, Session } from '@jupyterlab/services';
@@ -11,15 +11,8 @@ import {
   nullTranslator,
   TranslationBundle
 } from '@jupyterlab/translation';
-import {
-  ArrayExt,
-  ArrayIterator,
-  each,
-  filter,
-  find,
-  IIterator,
-  IterableOrArrayLike
-} from '@lumino/algorithm';
+import { IScore } from '@jupyterlab/ui-components';
+import { ArrayExt, filter } from '@lumino/algorithm';
 import { PromiseDelegate, ReadonlyJSONObject } from '@lumino/coreutils';
 import { IDisposable } from '@lumino/disposable';
 import { Poll } from '@lumino/polling';
@@ -103,7 +96,7 @@ export class FileBrowserModel implements IDisposable {
         backoff: true,
         max: 300 * 1000
       },
-      standby: 'when-hidden'
+      standby: options.refreshStandby || 'when-hidden'
     });
   }
 
@@ -192,8 +185,8 @@ export class FileBrowserModel implements IDisposable {
   /**
    * Create an iterator over the status of all in progress uploads.
    */
-  uploads(): IIterator<IUploadModel> {
-    return new ArrayIterator(this._uploads);
+  uploads(): IterableIterator<IUploadModel> {
+    return this._uploads[Symbol.iterator]();
   }
 
   /**
@@ -216,8 +209,8 @@ export class FileBrowserModel implements IDisposable {
    *
    * @returns A new iterator over the model's items.
    */
-  items(): IIterator<Contents.IModel> {
-    return new ArrayIterator(this._items);
+  items(): IterableIterator<Contents.IModel> {
+    return this._items[Symbol.iterator]();
   }
 
   /**
@@ -225,8 +218,8 @@ export class FileBrowserModel implements IDisposable {
    *
    * @returns A new iterator over the model's active sessions.
    */
-  sessions(): IIterator<Session.IModel> {
-    return new ArrayIterator(this._sessions);
+  sessions(): IterableIterator<Session.IModel> {
+    return this._sessions[Symbol.iterator]();
   }
 
   /**
@@ -435,7 +428,7 @@ export class FileBrowserModel implements IDisposable {
     await this.refresh();
     await this._uploadCheckDisposed();
     if (
-      find(this._items, i => i.name === file.name) &&
+      this._items.find(i => i.name === file.name) &&
       !(await shouldOverwrite(file.name))
     ) {
       throw err;
@@ -588,6 +581,7 @@ export class FileBrowserModel implements IDisposable {
       writable: contents.writable,
       created: contents.created,
       last_modified: contents.last_modified,
+      size: contents.size,
       mimetype: contents.mimetype,
       format: contents.format
     };
@@ -603,7 +597,7 @@ export class FileBrowserModel implements IDisposable {
    */
   protected onRunningChanged(
     sender: Session.IManager,
-    models: IterableOrArrayLike<Session.IModel>
+    models: Iterable<Session.IModel>
   ): void {
     this._populateSessions(models);
     this._refreshed.emit(void 0);
@@ -638,13 +632,13 @@ export class FileBrowserModel implements IDisposable {
   /**
    * Populate the model's sessions collection.
    */
-  private _populateSessions(models: IterableOrArrayLike<Session.IModel>): void {
+  private _populateSessions(models: Iterable<Session.IModel>): void {
     this._sessions.length = 0;
-    each(models, model => {
+    for (const model of models) {
       if (this._paths.has(model.path)) {
         this._sessions.push(model);
       }
-    });
+    }
   }
 
   protected translator: ITranslator;
@@ -704,6 +698,11 @@ export namespace FileBrowserModel {
     refreshInterval?: number;
 
     /**
+     * When the model stops polling the API. Defaults to `when-hidden`.
+     */
+    refreshStandby?: Poll.Standby | (() => boolean | Poll.Standby);
+
+    /**
      * An optional state database. If provided, the model will restore which
      * folder was last opened when it is restored.
      */
@@ -730,7 +729,7 @@ export class TogglableHiddenFileBrowserModel extends FileBrowserModel {
    *
    * @returns A new iterator over the model's items.
    */
-  items(): IIterator<Contents.IModel> {
+  items(): IterableIterator<Contents.IModel> {
     return this._includeHiddenFiles
       ? super.items()
       : filter(super.items(), value => !value.name.startsWith('.'));
@@ -768,7 +767,11 @@ export namespace TogglableHiddenFileBrowserModel {
 export class FilterFileBrowserModel extends TogglableHiddenFileBrowserModel {
   constructor(options: FilterFileBrowserModel.IOptions) {
     super(options);
-    this._filter = options.filter ? options.filter : model => Object.freeze({});
+    this._filter =
+      options.filter ??
+      (model => {
+        return {};
+      });
     this._filterDirectories = options.filterDirectories ?? true;
   }
 
@@ -787,28 +790,24 @@ export class FilterFileBrowserModel extends TogglableHiddenFileBrowserModel {
    *
    * @returns A new iterator over the model's items.
    */
-  items(): IIterator<Contents.IModel> {
-    return filter(super.items(), (value, index) => {
+  items(): IterableIterator<Contents.IModel> {
+    return filter(super.items(), value => {
       if (!this._filterDirectories && value.type === 'directory') {
         return true;
       } else {
         const filtered = this._filter(value);
-        if (typeof filtered !== 'boolean') {
-          value.indices = filtered?.indices;
-        }
+        value.indices = filtered?.indices;
         return !!filtered;
       }
     });
   }
 
-  setFilter(
-    filter: (value: Contents.IModel) => boolean | Partial<IScore> | null
-  ): void {
+  setFilter(filter: (value: Contents.IModel) => Partial<IScore> | null): void {
     this._filter = filter;
     void this.refresh();
   }
 
-  private _filter: (value: Contents.IModel) => boolean | Partial<IScore> | null;
+  private _filter: (value: Contents.IModel) => Partial<IScore> | null;
   private _filterDirectories: boolean;
 }
 
@@ -823,7 +822,7 @@ export namespace FilterFileBrowserModel {
     /**
      * Filter function on file browser item model
      */
-    filter?: (value: Contents.IModel) => boolean | Partial<IScore> | null;
+    filter?: (value: Contents.IModel) => Partial<IScore> | null;
 
     /**
      * Filter directories

@@ -3,12 +3,17 @@
 // Distributed under the terms of the Modified BSD License.
 
 import type * as nbformat from '@jupyterlab/nbformat';
-import type { Session, TerminalAPI, Workspace } from '@jupyterlab/services';
+import type {
+  Session,
+  TerminalAPI,
+  User,
+  Workspace
+} from '@jupyterlab/services';
 import type { ISettingRegistry } from '@jupyterlab/settingregistry';
 import type { JSONObject } from '@lumino/coreutils';
+import { UUID } from '@lumino/coreutils';
 import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import * as json5 from 'json5';
-import fetch from 'node-fetch';
 import { ContentsHelper } from './contents';
 import { PerformanceHelper } from './helpers';
 import {
@@ -30,13 +35,20 @@ export namespace galata {
       checkForUpdates: false,
       fetchNews: 'false'
     },
-    '@jupyterlab/fileeditor-extension:plugin': {
-      editorConfig: { cursorBlinkRate: 0 }
-    },
-    '@jupyterlab/notebook-extension:tracker': {
-      codeCellConfig: { cursorBlinkRate: 0 },
-      markdownCellConfig: { cursorBlinkRate: 0 },
-      rawCellConfig: { cursorBlinkRate: 0 }
+    '@jupyterlab/fileeditor-extension:plugin': {},
+    '@jupyterlab/notebook-extension:tracker': {},
+    '@jupyterlab/codemirror-extension:plugin': {
+      defaultConfig: {
+        cursorBlinkRate: 0
+      }
+    }
+  };
+
+  export const DEFAULT_DOCUMENTATION_STATE: Record<string, any> = {
+    data: {
+      'layout-restorer:data': {
+        relativeSizes: [0, 1, 0]
+      }
     }
   };
 
@@ -51,7 +63,6 @@ export namespace galata {
   export type DefaultSidebarTabId =
     | 'filebrowser'
     | 'jp-running-sessions'
-    | 'tab-manager'
     | 'jp-property-inspector'
     | 'table-of-contents'
     | 'extensionmanager.main-view'
@@ -83,6 +94,78 @@ export namespace galata {
    * Notebook toolbar item type
    */
   export type NotebookToolbarItemId = DefaultNotebookToolbarItemId | string;
+
+  /**
+   * Options to create a new page
+   */
+  export interface INewPageOption {
+    /**
+     * Application base URL
+     */
+    baseURL: string;
+    /**
+     * Playwright browser model
+     */
+    browser: Browser;
+    /**
+     * Callback that resolved when the application page is ready
+     */
+    waitForApplication: (page: Page, helpers: IJupyterLabPage) => Promise<void>;
+    /**
+     * Application URL path fragment
+     *
+     * Default: /lab
+     */
+    appPath?: string;
+    /**
+     * Whether to go to JupyterLab page within the fixture or not.
+     *
+     * Default: true
+     */
+    autoGoto?: boolean;
+    /**
+     * Mock Jupyter Server configuration in-memory or not.
+     *
+     * Default true
+     */
+    mockConfig?: boolean | Record<string, unknown>;
+    /**
+     * Mock JupyterLab state in-memory or not.
+     *
+     * Default galata.DEFAULT_SETTINGS
+     */
+    mockSettings?: boolean | Record<string, unknown>;
+    /**
+     * Mock JupyterLab settings in-memory or not.
+     *
+     * Default true
+     */
+    mockState?: boolean | Record<string, unknown>;
+    /**
+     * Mock JupyterLab user in-memory or not.
+     *
+     * Default true
+     */
+    mockUser?: boolean | Partial<User.IUser>;
+    /**
+     * Whether to store sessions in memory or not.
+     *
+     * Default true
+     */
+    mockSessions?: boolean;
+    /**
+     * Whether to store terminals in memory or not.
+     *
+     * Default true
+     */
+    mockTerminals?: boolean;
+    /**
+     * Create and delete a temporary path during the page existence
+     *
+     * Default ''
+     */
+    tmpPath?: string;
+  }
 
   /**
    * Add the Galata helpers to the page model
@@ -125,6 +208,7 @@ export namespace galata {
     mockConfig: boolean | Record<string, unknown>,
     mockSettings: boolean | Record<string, unknown>,
     mockState: boolean | Record<string, unknown>,
+    mockUser: boolean | Partial<User.IUser>,
     page: Page,
     sessions: Map<string, Session.IModel> | null,
     terminals: Map<string, TerminalAPI.IModel> | null,
@@ -168,6 +252,24 @@ export namespace galata {
       await Mock.mockState(page, workspace);
     }
 
+    let user: User.IUser = {
+      identity: {
+        username: UUID.uuid4(),
+        name: 'jovyan',
+        display_name: 'jovyan',
+        initials: 'JP',
+        color: 'var(--jp-collaborator-color1)'
+      },
+      permissions: {}
+    };
+    if (mockUser) {
+      if (typeof mockUser !== 'boolean') {
+        user = { ...mockUser } as any;
+      }
+      // The user will be stored in-memory
+      await Mock.mockUser(page, user);
+    }
+
     // Add sessions and terminals trackers
     if (sessions) {
       await Mock.mockRunners(page, sessions, 'sessions');
@@ -187,57 +289,78 @@ export namespace galata {
   /**
    * Create a contents REST API helpers object
    *
-   * @param baseURL Application base URL
-   * @param page Playwright page model
    * @param request Playwright API request context
+   * @param page Playwright page model
    * @returns Contents REST API helpers
    */
   export function newContentsHelper(
-    baseURL: string,
-    page?: Page,
-    request?: APIRequestContext
+    request?: APIRequestContext,
+    page?: Page
   ): ContentsHelper {
-    return new ContentsHelper(baseURL, page, request);
+    return new ContentsHelper(request, page);
   }
 
   /**
-   * Create a page with Galata helpers for the given browser
+   * Create a page with Galata helpers for the given browser in a new context.
    *
-   * @param browser Playwright browser model
-   * @param baseURL Application base URL
-   * @param waitForApplication Callback that resolved when the application page is ready
-   * @param appPath Application URL path fragment
    * @returns Playwright page model with Galata helpers
    */
-  export async function newPage(
-    appPath: string,
-    autoGoto: boolean,
-    baseURL: string,
-    browser: Browser,
-    mockConfig: boolean | Record<string, unknown>,
-    mockSettings: boolean | Record<string, unknown>,
-    mockState: boolean | Record<string, unknown>,
-    sessions: Map<string, Session.IModel> | null,
-    terminals: Map<string, TerminalAPI.IModel> | null,
-    tmpPath: string,
-    waitForApplication: (page: Page, helpers: IJupyterLabPage) => Promise<void>
-  ): Promise<IJupyterLabPageFixture> {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
-    return initTestPage(
+  export async function newPage(options: INewPageOption): Promise<{
+    page: IJupyterLabPageFixture;
+    sessions: Map<string, Session.IModel> | null;
+    terminals: Map<string, TerminalAPI.IModel> | null;
+  }> {
+    const {
       appPath,
       autoGoto,
       baseURL,
+      browser,
+      waitForApplication,
       mockConfig,
+      mockSessions,
       mockSettings,
       mockState,
-      page,
+      mockTerminals,
+      mockUser,
+      tmpPath
+    } = {
+      appPath: '/lab',
+      autoGoto: true,
+      mockConfig: true,
+      mockSessions: true,
+      mockSettings: galata.DEFAULT_SETTINGS,
+      mockState: true,
+      mockTerminals: true,
+      mockUser: true,
+      tmpPath: '',
+      ...options
+    };
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    const sessions = mockSessions ? new Map<string, Session.IModel>() : null;
+    const terminals = mockTerminals
+      ? new Map<string, TerminalAPI.IModel>()
+      : null;
+
+    return {
+      page: await initTestPage(
+        appPath,
+        autoGoto,
+        baseURL,
+        mockConfig,
+        mockSettings,
+        mockState,
+        mockUser,
+        page,
+        sessions,
+        terminals,
+        tmpPath,
+        waitForApplication
+      ),
       sessions,
-      terminals,
-      tmpPath,
-      waitForApplication
-    );
+      terminals
+    };
   }
 
   /**
@@ -281,7 +404,7 @@ export namespace galata {
      *
      * The session id can be found in the named group `id`.
      *
-     * The id will be suffixed by '/'.
+     * The id will be prefixed by '/'.
      */
     export const sessions = /.*\/api\/sessions(?<id>\/[@:-\w]+)?/;
 
@@ -290,7 +413,7 @@ export namespace galata {
      *
      * The schema name can be found in the named group `id`.
      *
-     * The id will be suffixed by '/'.
+     * The id will be prefixed by '/'.
      */
     export const settings = /.*\/api\/settings(?<id>(\/[@:-\w]+)*)/;
 
@@ -299,7 +422,7 @@ export namespace galata {
      *
      * The terminal id can be found in the named group `id`.
      *
-     * The id will be suffixed by '/'.
+     * The id will be prefixed by '/'.
      */
     export const terminals = /.*\/api\/terminals(?<id>\/[@:-\w]+)?/;
 
@@ -308,7 +431,7 @@ export namespace galata {
      *
      * The locale can be found in the named group `id`.
      *
-     * The id will be suffixed by '/'.
+     * The id will be prefixed by '/'.
      */
     export const translations = /.*\/api\/translations(?<id>\/[@:-\w]+)?/;
 
@@ -317,9 +440,14 @@ export namespace galata {
      *
      * The space name can be found in the named group `id`.
      *
-     * The id will be suffixed by '/'.
+     * The id will be prefixed by '/'.
      */
     export const workspaces = /.*\/api\/workspaces(?<id>(\/[-\w]+)+)/;
+
+    /**
+     * User API
+     */
+    export const user = /.*\/api\/me.*/;
   }
 
   /**
@@ -434,6 +562,69 @@ export namespace galata {
    */
   export namespace Mock {
     /**
+     * Set last modified attributes one day ago one listing
+     * directory content.
+     *
+     * @param page Page model object
+     *
+     * #### Notes
+     * The goal is to freeze the file browser display
+     */
+    export async function freezeContentLastModified(page: Page): Promise<void> {
+      // Listen for closing connection (may happen when request are still being processed)
+      let isClosed = false;
+      const ctxt = page.context();
+      ctxt.once('close', () => {
+        isClosed = true;
+      });
+      ctxt.browser()?.once('disconnected', () => {
+        isClosed = true;
+      });
+
+      return page.route(Routes.contents, async (route, request) => {
+        switch (request.method()) {
+          case 'GET': {
+            // Proxy the GET request
+            const response = await ctxt.request.fetch(request);
+            if (!response.ok()) {
+              if (!page.isClosed() && !isClosed) {
+                return route.fulfill({
+                  status: response.status(),
+                  body: await response.text()
+                });
+              }
+              break;
+            }
+            const data = await response.json();
+            // Modify the last_modified values to be set one day before now.
+            if (
+              data['type'] === 'directory' &&
+              Array.isArray(data['content'])
+            ) {
+              const now = Date.now();
+              const aDayAgo = new Date(now - 24 * 3600 * 1000).toISOString();
+              for (const entry of data['content'] as any[]) {
+                // Mutate the list in-place
+                entry['last_modified'] = aDayAgo;
+              }
+            }
+
+            if (!page.isClosed() && !isClosed) {
+              return route.fulfill({
+                status: 200,
+                body: JSON.stringify(data),
+                contentType: 'application/json'
+              });
+            }
+            break;
+          }
+          default:
+            return route.continue();
+        }
+      });
+    }
+
+    /**
      * Clear all wanted sessions or terminals.
      *
      * @param baseURL Application base URL
@@ -443,25 +634,18 @@ export namespace galata {
      * @returns Whether the runners were closed or not
      */
     export async function clearRunners(
-      baseURL: string,
+      request: APIRequestContext,
       runners: string[],
-      type: 'sessions' | 'terminals',
-      request?: APIRequestContext
+      type: 'sessions' | 'terminals'
     ): Promise<boolean> {
       const responses = await Promise.all(
         [...new Set(runners)].map(id =>
-          request
-            ? (request.fetch(`/api/${type}/${id}`, {
-                method: 'DELETE'
-              }) as any)
-            : (fetch(`${baseURL}/api/${type}/${id}`, {
-                method: 'DELETE'
-              }) as any)
+          request.fetch(`/api/${type}/${id}`, {
+            method: 'DELETE'
+          })
         )
       );
-      return responses.every(response =>
-        typeof response.ok === 'function' ? response.ok() : response.ok
-      );
+      return responses.every(response => response.ok());
     }
 
     /**
@@ -522,10 +706,10 @@ export namespace galata {
       // Listen for closing connection (may happen when request are still being processed)
       let isClosed = false;
       const ctxt = page.context();
-      ctxt.on('close', () => {
+      ctxt.once('close', () => {
         isClosed = true;
       });
-      ctxt.browser()?.on('disconnected', () => {
+      ctxt.browser()?.once('disconnected', () => {
         isClosed = true;
       });
       return page.route(routeRegex, async (route, request) => {
@@ -725,10 +909,10 @@ export namespace galata {
       // Listen for closing connection (may happen when request are still being processed)
       let isClosed = false;
       const ctxt = page.context();
-      ctxt.on('close', () => {
+      ctxt.once('close', () => {
         isClosed = true;
       });
-      ctxt.browser()?.on('disconnected', () => {
+      ctxt.browser()?.once('disconnected', () => {
         isClosed = true;
       });
 
@@ -822,6 +1006,26 @@ export namespace galata {
               status: 204
             });
           }
+          default:
+            return route.continue();
+        }
+      });
+    }
+
+    /**
+     * Mock user route.
+     *
+     * @param page Page model object
+     * @param user In-memory user
+     */
+    export function mockUser(page: Page, user: User.IUser): Promise<void> {
+      return page.route(Routes.user, (route, request) => {
+        switch (request.method()) {
+          case 'GET':
+            return route.fulfill({
+              status: 200,
+              body: JSON.stringify(user)
+            });
           default:
             return route.continue();
         }

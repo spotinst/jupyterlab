@@ -2,24 +2,10 @@
   "extends": "../../tsconfigbase",
   "compilerOptions": {
     "outDir": "lib",
-    "rootDir": "src",
-    "lib": ["DOM", "ES2018"],
-    "types": ["resize-observer-browser"]
+    "rootDir": "src"
   },
   "include": ["src/**/*"],
   "references": [
-    {
-      "path": "../apputils"
-    },
-    {
-      "path": "../codeeditor"
-    },
-    {
-      "path": "../services"
-    },
-    {
-      "path": "../translation"
-    },
     {
       "path": "../ui-components"
     }

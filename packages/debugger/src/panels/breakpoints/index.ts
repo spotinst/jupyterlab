@@ -1,31 +1,21 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import {
-  CommandToolbarButton,
-  Dialog,
-  showDialog,
-  ToolbarButton
-} from '@jupyterlab/apputils';
-
+import { Dialog, showDialog } from '@jupyterlab/apputils';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+import { PanelWithToolbar, ToolbarButton } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { Signal } from '@lumino/signaling';
-
 import { Panel } from '@lumino/widgets';
-
-import { closeAllIcon } from '../../icons';
-
+import { closeAllIcon, exceptionIcon } from '../../icons';
 import { IDebugger } from '../../tokens';
-
 import { BreakpointsBody } from './body';
-
-import { BreakpointsHeader } from './header';
+import { PauseOnExceptionsWidget } from './pauseonexceptions';
 
 /**
  * A Panel to show a list of breakpoints.
  */
-export class Breakpoints extends Panel {
+export class Breakpoints extends PanelWithToolbar {
   /**
    * Instantiate a new Breakpoints Panel.
    *
@@ -34,23 +24,22 @@ export class Breakpoints extends Panel {
   constructor(options: Breakpoints.IOptions) {
     super(options);
     const { model, service, commands } = options;
-    const translator = options.translator || nullTranslator;
     const trans = (options.translator ?? nullTranslator).load('jupyterlab');
     this.title.label = trans.__('Breakpoints');
 
-    const header = new BreakpointsHeader(translator);
     const body = new BreakpointsBody(model);
 
-    header.toolbar.addItem(
-      'pause',
-      new CommandToolbarButton({
-        commands: commands.registry,
-        id: commands.pause,
-        label: ''
+    this.toolbar.addItem(
+      'pauseOnException',
+      new PauseOnExceptionsWidget({
+        service: service,
+        commands: commands,
+        icon: exceptionIcon,
+        tooltip: trans.__('Pause on exception filter')
       })
     );
 
-    header.toolbar.addItem(
+    this.toolbar.addItem(
       'closeAll',
       new ToolbarButton({
         icon: closeAllIcon,
@@ -63,7 +52,7 @@ export class Breakpoints extends Panel {
             body: trans.__('Are you sure you want to remove all breakpoints?'),
             buttons: [
               Dialog.okButton({ label: trans.__('Remove breakpoints') }),
-              Dialog.cancelButton({ label: trans.__('Cancel') })
+              Dialog.cancelButton()
             ],
             hasClose: true
           });
@@ -75,9 +64,7 @@ export class Breakpoints extends Panel {
       })
     );
 
-    this.addWidget(header);
     this.addWidget(body);
-
     this.addClass('jp-DebuggerBreakpoints');
   }
 
@@ -98,9 +85,9 @@ export namespace Breakpoints {
     registry: CommandRegistry;
 
     /**
-     * The pause command ID.
+     * The pause on exceptions command ID.
      */
-    pause: string;
+    pauseOnExceptions: string;
   }
   /**
    * Instantiation options for `Breakpoints`.

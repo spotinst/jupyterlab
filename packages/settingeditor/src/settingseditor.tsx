@@ -1,9 +1,14 @@
+/*
+ * Copyright (c) Jupyter Development Team.
+ * Distributed under the terms of the Modified BSD License.
+ */
+
 import { ILabStatus } from '@jupyterlab/application';
-import { ReactWidget, showDialog } from '@jupyterlab/apputils';
+import { showDialog } from '@jupyterlab/apputils';
 import { ISettingRegistry, Settings } from '@jupyterlab/settingregistry';
 import { IStateDB } from '@jupyterlab/statedb';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
-import { IFormComponentRegistry } from '@jupyterlab/ui-components';
+import { IFormRendererRegistry, ReactWidget } from '@jupyterlab/ui-components';
 import { CommandRegistry } from '@lumino/commands';
 import { IDisposable } from '@lumino/disposable';
 import { Message } from '@lumino/messaging';
@@ -157,13 +162,20 @@ export namespace SettingsEditor {
   export type SaveState = 'started' | 'failed' | 'completed';
 
   /**
+   *
+   */
+  export type PluginSearchFilter =
+    | ((plugin: ISettingRegistry.IPlugin) => string[] | null)
+    | null;
+
+  /**
    * Settings editor options
    */
   export interface IOptions {
     /**
      * Form component registry
      */
-    editorRegistry: IFormComponentRegistry;
+    editorRegistry: IFormRendererRegistry;
 
     /**
      * The state database key for the editor's state management.

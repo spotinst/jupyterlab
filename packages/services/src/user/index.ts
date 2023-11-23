@@ -60,6 +60,7 @@ export class UserManager extends BaseManager implements User.IManager {
       .catch(
         _ =>
           // Return a promise that will never resolve, so user service is never ready
+          // This typically occurs when the backend has no user service
           new Promise(() => {
             // no-op
           })

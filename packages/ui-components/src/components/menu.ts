@@ -43,23 +43,14 @@ export interface IRankedMenu extends IDisposable {
    *
    * @param options - The options for creating the menu item.
    *
-   * @returns The menu item added to the menu.
-   *
-   * @deprecated It will return a `IDisposable` object in v4
+   * @returns The disposable menu item added to the menu.
    */
-  addItem(options: IRankedMenu.IItemOptions): Menu.IItem;
+  addItem(options: IRankedMenu.IItemOptions): IDisposable;
 
   /**
    * A read-only array of the menu items in the menu.
    */
   readonly items: ReadonlyArray<Menu.IItem>;
-
-  /**
-   * The underlying Lumino menu.
-   *
-   * @deprecated will be removed in v4
-   */
-  readonly menu: Menu;
 
   /**
    * Menu rank
@@ -120,16 +111,6 @@ export class RankedMenu extends Menu implements IRankedMenu {
   }
 
   /**
-   * The underlying Lumino menu.
-   *
-   * @deprecated since v3.1
-   * RankMenu inherits from Menu since v3.1
-   */
-  get menu(): Menu {
-    return this;
-  }
-
-  /**
    * Menu rank.
    */
   get rank(): number | undefined {
@@ -169,7 +150,7 @@ export class RankedMenu extends Menu implements IRankedMenu {
     const added: IDisposableMenuItem[] = [];
 
     // Insert a separator before the group.
-    // Phosphor takes care of superfluous leading,
+    // Lumino takes care of superfluous leading,
     // trailing, and duplicate separators.
     if (this._includeSeparators) {
       added.push(
@@ -363,11 +344,7 @@ class DisposableMenuItem implements IDisposableMenuItem {
   /**
    * The icon renderer for the menu item.
    */
-  get icon():
-    | VirtualElement.IRenderer
-    | undefined
-    /* <DEPRECATED> */
-    | string /* </DEPRECATED> */ {
+  get icon(): VirtualElement.IRenderer | undefined {
     return this._item.deref()!.icon;
   }
 

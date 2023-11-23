@@ -1,81 +1,20 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-const sampleData = `# Title first level
-
-## Title second Level
-
-### Title third level
-
-#### Title fourth level
-
-##### Title fifth level
-
-###### Title sixth level
-
-# h1
-
-## h2
-
-### h3
-
-#### h4
-
-##### h6
-
-This is just a sample paragraph
-You can look at different level of nested unordered list ljbakjn arsvlasc asc asc awsc asc ascd ascd ascd asdc asc
-
-- level 1
-  - level 2
-  - level 2
-  - level 2
-    - level 3
-    - level 3
-      - level 4
-        - level 5
-          - level 6
-  - level 2
-- level 1
-- level 1
-- level 1
-  Ordered list
-
-1.  level 1 2. level 1 3. level 1 4. level 1 1. level 1 1. level 1 2. level 1 3. level 1 4. level 1 1. level 1 1. level 1
-2.  level 1
-3.  level 1
-    some Horizontal line
-
----
-
-## and another one
-
-Colons can be used to align columns.
-
-| Tables        |      Are      | Cool |
-| ------------- | :-----------: | ---: |
-| col 3 is      | right-aligned | 1600 |
-| col 2 is      |   centered    |   12 |
-| zebra stripes |   are neat    |    1 |
-
-There must be at least 3 dashes separating each header cell.
-The outer pipes (|) are optional, and you don't need to make the
-raw Markdown line up prettily. You can also use inline Markdown.
-`;
-
 import { Sanitizer } from '@jupyterlab/apputils';
-import { JSONObject, JSONValue } from '@lumino/coreutils';
-import { Widget } from '@lumino/widgets';
 import {
   htmlRendererFactory,
   imageRendererFactory,
+  IMarkdownParser,
   IRenderMime,
   latexRendererFactory,
   markdownRendererFactory,
   MimeModel,
   svgRendererFactory,
   textRendererFactory
-} from '../src';
+} from '@jupyterlab/rendermime';
+import { JSONObject, JSONValue } from '@lumino/coreutils';
+import { Widget } from '@lumino/widgets';
 
 function createModel(
   mimeType: string,
@@ -233,6 +172,32 @@ describe('rendermime/factories', () => {
         );
       });
 
+      it('should not skip autolink', async () => {
+        const source = 'www.example.com';
+        const expected =
+          '<pre><a href="https://www.example.com" rel="noopener" target="_blank">www.example.com</a></pre>';
+        const f = textRendererFactory;
+        const mimeType = 'text/plain';
+        const model = createModel(mimeType, source);
+        sanitizer.setAutolink(true);
+        const w = f.createRenderer({ mimeType, ...defaultOptions });
+        await w.renderModel(model);
+        expect(w.node.innerHTML).toBe(expected);
+      });
+
+      it('should skip autolink', async () => {
+        const source = 'www.example.com';
+        const expected = '<pre>www.example.com</pre>';
+        const f = textRendererFactory;
+        const mimeType = 'text/plain';
+        const model = createModel(mimeType, source);
+        sanitizer.setAutolink(false);
+        const w = f.createRenderer({ mimeType, ...defaultOptions });
+        await w.renderModel(model);
+        expect(w.node.innerHTML).toBe(expected);
+        sanitizer.setAutolink(true);
+      });
+
       it('should autolink multiple URLs', async () => {
         const source = 'www.example.com\nwww.python.org';
         const expected =
@@ -327,12 +292,34 @@ describe('rendermime/factories', () => {
     });
 
     describe('#createRenderer()', () => {
-      it('should set the inner html', async () => {
+      let markdownParser: IMarkdownParser;
+
+      beforeAll(() => {
+        markdownParser = {
+          render: (content: string): Promise<string> => Promise.resolve(content)
+        };
+      });
+
+      it('should set the inner html with no parser', async () => {
         const f = markdownRendererFactory;
         const source = '<p>hello</p>';
         const mimeType = 'text/markdown';
         const model = createModel(mimeType, source);
         const w = f.createRenderer({ mimeType, ...defaultOptions });
+        await w.renderModel(model);
+        expect(w.node.innerHTML).toBe(`<pre>${source}</pre>`);
+      });
+
+      it('should set the inner html with md parser', async () => {
+        const f = markdownRendererFactory;
+        const source = '<p>hello</p>';
+        const mimeType = 'text/markdown';
+        const model = createModel(mimeType, source);
+        const w = f.createRenderer({
+          mimeType,
+          ...defaultOptions,
+          markdownParser
+        });
         await w.renderModel(model);
         expect(w.node.innerHTML).toBe(source);
       });
@@ -342,19 +329,30 @@ describe('rendermime/factories', () => {
         const source = '<p>hello</p>';
         const mimeType = 'text/markdown';
         const model = createModel(mimeType, source);
-        const w = f.createRenderer({ mimeType, ...defaultOptions });
+        const w = f.createRenderer({
+          mimeType,
+          ...defaultOptions,
+          markdownParser
+        });
         await w.renderModel(model);
         await w.renderModel(model);
-        expect(w.node.innerHTML).toBe(source);
+        expect(w.node.innerHTML).toBe(`${source}`);
       });
 
       it('should add header anchors', async () => {
         const f = markdownRendererFactory;
         const mimeType = 'text/markdown';
+        const sampleData = '### Title third level';
+
         const model = createModel(mimeType, sampleData);
-        const w = f.createRenderer({ mimeType, ...defaultOptions });
+        const w = f.createRenderer({
+          mimeType,
+          ...defaultOptions,
+          markdownParser: { render: content => '<h3>Title third level</h3>' }
+        });
         await w.renderModel(model);
         Widget.attach(w, document.body);
+
         const node = document.getElementById('Title-third-level')!;
         expect(node.localName).toBe('h3');
         const anchor = node.firstChild!.nextSibling as HTMLAnchorElement;

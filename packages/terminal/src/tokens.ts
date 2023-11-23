@@ -12,14 +12,15 @@ import { Widget } from '@lumino/widgets';
 export interface ITerminalTracker
   extends IWidgetTracker<MainAreaWidget<ITerminal.ITerminal>> {}
 
-/* tslint:disable */
 /**
  * The editor tracker token.
  */
 export const ITerminalTracker = new Token<ITerminalTracker>(
-  '@jupyterlab/terminal:ITerminalTracker'
+  '@jupyterlab/terminal:ITerminalTracker',
+  `A widget tracker for terminals.
+  Use this if you want to be able to iterate over and interact with terminals
+  created by the application.`
 );
-/* tslint:enable */
 
 /**
  * The namespace for terminals. Separated from the widget so it can be lazy
@@ -50,17 +51,17 @@ export namespace ITerminal {
     /**
      * Check if terminal has any text selected.
      */
-    hasSelection?(): boolean;
+    hasSelection(): boolean;
 
     /**
      * Paste text into terminal.
      */
-    paste?(data: string): void;
+    paste(data: string): void;
 
     /**
      * Get selected text from terminal.
      */
-    getSelection?(): string | null;
+    getSelection(): string | null;
   }
   /**
    * Options for the terminal widget.
@@ -167,6 +168,7 @@ export namespace ITerminal {
     background: string;
     cursor: string;
     cursorAccent: string;
-    selection: string;
+    selectionBackground: string;
+    selectionInactiveBackground: string;
   }
 }

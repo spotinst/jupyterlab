@@ -7,6 +7,11 @@ import { IOutputModel, IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import { IRenderMime } from '@jupyterlab/rendermime-interfaces';
 import { Kernel, KernelMessage } from '@jupyterlab/services';
 import {
+  ITranslator,
+  nullTranslator,
+  TranslationBundle
+} from '@jupyterlab/translation';
+import {
   JSONObject,
   PromiseDelegate,
   ReadonlyJSONObject,
@@ -15,9 +20,8 @@ import {
 } from '@lumino/coreutils';
 import { Message } from '@lumino/messaging';
 import { AttachedProperty } from '@lumino/properties';
-import { Signal } from '@lumino/signaling';
+import { ISignal, Signal } from '@lumino/signaling';
 import { Panel, PanelLayout, Widget } from '@lumino/widgets';
-import ResizeObserver from 'resize-observer-polyfill';
 import { IOutputAreaModel } from './model';
 
 /**
@@ -70,6 +74,11 @@ const STDIN_PROMPT_CLASS = 'jp-Stdin-prompt';
  */
 const STDIN_INPUT_CLASS = 'jp-Stdin-input';
 
+/**
+ * The overlay that can be clicked to switch between output scrolling modes.
+ */
+const OUTPUT_PROMPT_OVERLAY = 'jp-OutputArea-promptOverlay';
+
 /** ****************************************************************************
  * OutputArea
  ******************************************************************************/
@@ -89,13 +98,14 @@ export class OutputArea extends Widget {
    */
   constructor(options: OutputArea.IOptions) {
     super();
+    super.layout = new PanelLayout();
     this.addClass(OUTPUT_AREA_CLASS);
-
     this.contentFactory =
-      options.contentFactory || OutputArea.defaultContentFactory;
-    this.layout = new PanelLayout();
+      options.contentFactory ?? OutputArea.defaultContentFactory;
     this.rendermime = options.rendermime;
     this._maxNumberOutputs = options.maxNumberOutputs ?? Infinity;
+    this._translator = options.translator ?? nullTranslator;
+    this._inputHistoryScope = options.inputHistoryScope ?? 'global';
 
     const model = (this.model = options.model);
     for (
@@ -108,17 +118,15 @@ export class OutputArea extends Widget {
     }
     model.changed.connect(this.onModelChanged, this);
     model.stateChanged.connect(this.onStateChanged, this);
+    if (options.promptOverlay) {
+      this._addPromptOverlay();
+    }
   }
 
   /**
    * The content factory used by the widget.
    */
   readonly contentFactory: OutputArea.IContentFactory;
-
-  /**
-   * Narrow the type of OutputArea's layout prop
-   */
-  readonly layout: PanelLayout;
 
   /**
    * The model used by the widget.
@@ -131,6 +139,13 @@ export class OutputArea extends Widget {
   readonly rendermime: IRenderMimeRegistry;
 
   /**
+   * Narrow the type of OutputArea's layout prop
+   */
+  get layout(): PanelLayout {
+    return super.layout as PanelLayout;
+  }
+
+  /**
    * A read-only sequence of the children widgets in the output area.
    */
   get widgets(): ReadonlyArray<Widget> {
@@ -138,7 +153,7 @@ export class OutputArea extends Widget {
   }
 
   /**
-   * A public signal used to indicate the number of outputs has changed.
+   * A public signal used to indicate the number of displayed outputs has changed.
    *
    * #### Notes
    * This is useful for parents who want to apply styling based on the number
@@ -179,7 +194,9 @@ export class OutputArea extends Widget {
     // Make sure there were no input widgets.
     if (this.widgets.length) {
       this._clear();
-      this.outputLengthChanged.emit(this.model.length);
+      this.outputLengthChanged.emit(
+        Math.min(this.model.length, this._maxNumberOutputs)
+      );
     }
 
     // Handle published messages.
@@ -194,6 +211,13 @@ export class OutputArea extends Widget {
         this.onInputRequest(msg, value);
       }
     };
+  }
+
+  /**
+   * Signal emitted when an output area is requesting an input.
+   */
+  get inputRequested(): ISignal<OutputArea, void> {
+    return this._inputRequested;
   }
 
   /**
@@ -280,8 +304,29 @@ export class OutputArea extends Widget {
   }
 
   /**
+   * Emitted when user requests toggling of the output scrolling mode.
+   */
+  get toggleScrolling(): ISignal<OutputArea, void> {
+    return this._toggleScrolling;
+  }
+
+  /**
+   * Add overlay allowing to toggle scrolling.
+   */
+  private _addPromptOverlay() {
+    const overlay = document.createElement('div');
+    overlay.className = OUTPUT_PROMPT_OVERLAY;
+    const trans = this._translator.load('jupyterlab');
+    overlay.title = trans.__('Toggle output scrolling');
+    overlay.addEventListener('click', () => {
+      this._toggleScrolling.emit();
+    });
+    this.node.appendChild(overlay);
+  }
+
+  /**
    * Update indices in _displayIdMap in response to element remove from model items
-   * *
+   *
    * @param startIndex - The index of first element removed
    *
    * @param count - The number of elements removed from model items
@@ -308,16 +353,27 @@ export class OutputArea extends Widget {
   /**
    * Follow changes on the output model state.
    */
-  protected onStateChanged(sender: IOutputAreaModel): void {
+  protected onStateChanged(
+    sender: IOutputAreaModel,
+    change: number | void
+  ): void {
     const outputLength = Math.min(this.model.length, this._maxNumberOutputs);
-    for (let i = 0; i < outputLength; i++) {
-      this._setOutput(i, this.model.get(i));
+    if (change) {
+      if (change >= this._maxNumberOutputs) {
+        // Bail early
+        return;
+      }
+      this._setOutput(change, this.model.get(change));
+    } else {
+      for (let i = 0; i < outputLength; i++) {
+        this._setOutput(i, this.model.get(i));
+      }
     }
     this.outputLengthChanged.emit(outputLength);
   }
 
   /**
-   * Clear the widget inputs and outputs.
+   * Clear the widget outputs.
    */
   private _clear(): void {
     // Bail if there is no work to do.
@@ -383,7 +439,9 @@ export class OutputArea extends Widget {
       parent_header: msg.header,
       prompt: stdinPrompt,
       password,
-      future
+      future,
+      translator: this._translator,
+      inputHistoryScope: this._inputHistoryScope
     });
     input.addClass(OUTPUT_AREA_OUTPUT_CLASS);
     panel.addWidget(input);
@@ -393,6 +451,8 @@ export class OutputArea extends Widget {
       this.maxNumberOutputs = this.model.length;
     }
     this.layout.addWidget(panel);
+
+    this._inputRequested.emit();
 
     /**
      * Wait for the stdin to complete, add it to the model (so it persists)
@@ -420,12 +480,10 @@ export class OutputArea extends Widget {
     if (index >= this._maxNumberOutputs) {
       return;
     }
-
     const panel = this.layout.widgets[index] as Panel;
-    const renderer = (panel.widgets
-      ? panel.widgets[1]
-      : panel) as IRenderMime.IRenderer;
-
+    const renderer = (
+      panel.widgets ? panel.widgets[1] : panel
+    ) as IRenderMime.IRenderer;
     // Check whether it is safe to reuse renderer:
     // - Preferred mime type has not changed
     // - Isolation has not changed
@@ -434,7 +492,6 @@ export class OutputArea extends Widget {
       model.trusted ? 'any' : 'ensure'
     );
     if (
-      renderer.renderModel &&
       Private.currentPreferredMimetype.get(renderer) === mimeType &&
       OutputArea.isIsolated(mimeType, model.metadata) ===
         renderer instanceof Private.IsolatedRenderer
@@ -456,6 +513,7 @@ export class OutputArea extends Widget {
     if (index > this._maxNumberOutputs) {
       return;
     }
+
     const layout = this.layout as PanelLayout;
 
     if (index === this._maxNumberOutputs) {
@@ -543,7 +601,8 @@ export class OutputArea extends Widget {
     output.renderModel(model).catch(error => {
       // Manually append error message to output
       const pre = document.createElement('pre');
-      pre.textContent = `Javascript Error: ${error.message}`;
+      const trans = this._translator.load('jupyterlab');
+      pre.textContent = trans.__('Javascript Error: %1', error.message);
       output.node.appendChild(pre);
 
       // Remove mime-type-specific CSS classes
@@ -640,7 +699,6 @@ export class OutputArea extends Widget {
     executionCount: number | null = null
   ): Panel {
     const panel = new Private.OutputPanel();
-
     panel.addClass(OUTPUT_AREA_ITEM_CLASS);
 
     const prompt = this.contentFactory.createOutputPrompt();
@@ -653,21 +711,24 @@ export class OutputArea extends Widget {
     return panel;
   }
 
-  private _minHeightTimeout: number | null = null;
+  private _displayIdMap = new Map<string, number[]>();
   private _future: Kernel.IShellFuture<
     KernelMessage.IExecuteRequestMsg,
     KernelMessage.IExecuteReplyMsg
   >;
-  private _displayIdMap = new Map<string, number[]>();
-  private _outputTracker = new WidgetTracker<Widget>({
-    namespace: UUID.uuid4()
-  });
-
   /**
    * The maximum outputs to show in the trimmed
    * output area.
    */
   private _maxNumberOutputs: number;
+  private _minHeightTimeout: number | null = null;
+  private _inputRequested = new Signal<OutputArea, void>(this);
+  private _toggleScrolling = new Signal<OutputArea, void>(this);
+  private _outputTracker = new WidgetTracker<Widget>({
+    namespace: UUID.uuid4()
+  });
+  private _translator: ITranslator;
+  private _inputHistoryScope: 'global' | 'session' = 'global';
 }
 
 export class SimplifiedOutputArea extends OutputArea {
@@ -686,10 +747,17 @@ export class SimplifiedOutputArea extends OutputArea {
    */
   protected createOutputItem(model: IOutputModel): Widget | null {
     const output = this.createRenderedMimetype(model);
-    if (output) {
-      output.addClass(OUTPUT_AREA_OUTPUT_CLASS);
+
+    if (!output) {
+      return null;
     }
-    return output;
+
+    const panel = new Private.OutputPanel();
+    panel.addClass(OUTPUT_AREA_ITEM_CLASS);
+
+    output.addClass(OUTPUT_AREA_OUTPUT_CLASS);
+    panel.addWidget(output);
+    return panel;
   }
 }
 
@@ -720,6 +788,21 @@ export namespace OutputArea {
      * The maximum number of output items to display on top and bottom of cell output.
      */
     maxNumberOutputs?: number;
+
+    /**
+     * Whether to show prompt overlay emitting `toggleScrolling` signal.
+     */
+    promptOverlay?: boolean;
+
+    /**
+     * Translator
+     */
+    readonly translator?: ITranslator;
+
+    /**
+     * Whether to split stdin line history by kernel session or keep globally accessible.
+     */
+    inputHistoryScope?: 'global' | 'session';
   }
 
   /**
@@ -873,24 +956,82 @@ export interface IStdin extends Widget {
  * The default stdin widget.
  */
 export class Stdin extends Widget implements IStdin {
-  private static _history: string[] = [];
+  private static _history: Map<string, string[]> = new Map();
 
-  private static _historyAt(ix: number): string | undefined {
-    const len = Stdin._history.length;
-    // interpret negative ix exactly like Array.at
-    ix = ix < 0 ? len + ix : ix;
+  private static _historyIx(key: string, ix: number): number | undefined {
+    const history = Stdin._history.get(key);
+    if (!history) {
+      return undefined;
+    }
+    const len = history.length;
+    // wrap nonpositive ix to nonnegative ix
+    if (ix <= 0) {
+      return len + ix;
+    }
+  }
 
-    if (ix < len) {
-      return Stdin._history[ix];
+  private static _historyAt(key: string, ix: number): string | undefined {
+    const history = Stdin._history.get(key);
+    if (!history) {
+      return undefined;
+    }
+    const len = history.length;
+    const ixpos = Stdin._historyIx(key, ix);
+
+    if (ixpos !== undefined && ixpos < len) {
+      return history[ixpos];
     }
     // return undefined if ix is out of bounds
   }
 
-  private static _historyPush(line: string): void {
-    Stdin._history.push(line);
-    if (Stdin._history.length > 1000) {
+  private static _historyPush(key: string, line: string): void {
+    const history = Stdin._history.get(key)!;
+    history.push(line);
+    if (history.length > 1000) {
       // truncate line history if it's too long
-      Stdin._history.shift();
+      history.shift();
+    }
+  }
+
+  private static _historySearch(
+    key: string,
+    pat: string,
+    ix: number,
+    reverse = true
+  ): number | undefined {
+    const history = Stdin._history.get(key)!;
+    const len = history.length;
+    const ixpos = Stdin._historyIx(key, ix);
+    const substrFound = (x: string) => x.search(pat) !== -1;
+
+    if (ixpos === undefined) {
+      return;
+    }
+
+    if (reverse) {
+      if (ixpos === 0) {
+        // reverse search fails if already at start of history
+        return;
+      }
+
+      const ixFound = (history.slice(0, ixpos) as any).findLastIndex(
+        substrFound
+      );
+      if (ixFound !== -1) {
+        // wrap ix to negative
+        return ixFound - len;
+      }
+    } else {
+      if (ixpos >= len - 1) {
+        // forward search fails if already at end of history
+        return;
+      }
+
+      const ixFound = history.slice(ixpos + 1).findIndex(substrFound);
+      if (ixFound !== -1) {
+        // wrap ix to negative and adjust for slice
+        return ixFound - len + ixpos + 1;
+      }
     }
   }
 
@@ -902,15 +1043,28 @@ export class Stdin extends Widget implements IStdin {
       node: Private.createInputWidgetNode(options.prompt, options.password)
     });
     this.addClass(STDIN_CLASS);
-    this._history_ix = 0;
-    this._input = this.node.getElementsByTagName('input')[0];
-    this._input.focus();
-    // make users aware of the line history feature
-    this._input.placeholder = '↑↓ for history';
     this._future = options.future;
+    this._historyIndex = 0;
+    this._historyKey =
+      options.inputHistoryScope === 'session'
+        ? options.parent_header.session
+        : '';
+    this._historyPat = '';
     this._parentHeader = options.parent_header;
-    this._value = options.prompt + ' ';
     this._password = options.password;
+    this._trans = (options.translator ?? nullTranslator).load('jupyterlab');
+    this._value = options.prompt + ' ';
+
+    this._input = this.node.getElementsByTagName('input')[0];
+    // make users aware of the line history feature
+    this._input.placeholder = this._trans.__(
+      '↑↓ for history. Search history with c-↑/c-↓'
+    );
+
+    // initialize line history
+    if (!Stdin._history.has(this._historyKey)) {
+      Stdin._history.set(this._historyKey, []);
+    }
   }
 
   /**
@@ -932,33 +1086,11 @@ export class Stdin extends Widget implements IStdin {
    */
   handleEvent(event: KeyboardEvent): void {
     const input = this._input;
+
     if (event.type === 'keydown') {
-      if (event.key === 'ArrowUp') {
-        const historyLine = Stdin._historyAt(this._history_ix - 1);
-        if (historyLine) {
-          if (this._history_ix === 0) {
-            this._value_cache = input.value;
-          }
-          this._setInputValue(historyLine);
-          --this._history_ix;
-          // The default action for ArrowUp is moving to first character
-          // but we want to keep the cursor at the end.
-          event.preventDefault();
-        }
-      } else if (event.key === 'ArrowDown') {
-        if (this._history_ix === 0) {
-          // do nothing
-        } else if (this._history_ix === -1) {
-          this._setInputValue(this._value_cache);
-          ++this._history_ix;
-        } else {
-          const historyLine = Stdin._historyAt(this._history_ix + 1);
-          if (historyLine) {
-            this._setInputValue(historyLine);
-            ++this._history_ix;
-          }
-        }
-      } else if (event.key === 'Enter') {
+      if (event.key === 'Enter') {
+        this.resetSearch();
+
         this._future.sendInputReply(
           {
             status: 'ok',
@@ -970,11 +1102,88 @@ export class Stdin extends Widget implements IStdin {
           this._value += '········';
         } else {
           this._value += input.value;
-          Stdin._historyPush(input.value);
+          Stdin._historyPush(this._historyKey, input.value);
         }
         this._promise.resolve(void 0);
+      } else if (event.key === 'Escape') {
+        // currently this gets clobbered by the documentsearch:end command at the notebook level
+        this.resetSearch();
+        input.blur();
+      } else if (
+        event.ctrlKey &&
+        (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+      ) {
+        // if _historyPat is blank, use input as search pattern. Otherwise, reuse the current search pattern
+        if (this._historyPat === '') {
+          this._historyPat = input.value;
+        }
+
+        const reverse = event.key === 'ArrowUp';
+        const searchHistoryIx = Stdin._historySearch(
+          this._historyKey,
+          this._historyPat,
+          this._historyIndex,
+          reverse
+        );
+
+        if (searchHistoryIx !== undefined) {
+          const historyLine = Stdin._historyAt(
+            this._historyKey,
+            searchHistoryIx
+          );
+          if (historyLine !== undefined) {
+            if (this._historyIndex === 0) {
+              this._valueCache = input.value;
+            }
+
+            this._setInputValue(historyLine);
+            this._historyIndex = searchHistoryIx;
+            // The default action for ArrowUp is moving to first character
+            // but we want to keep the cursor at the end.
+            event.preventDefault();
+          }
+        }
+      } else if (event.key === 'ArrowUp') {
+        this.resetSearch();
+
+        const historyLine = Stdin._historyAt(
+          this._historyKey,
+          this._historyIndex - 1
+        );
+        if (historyLine) {
+          if (this._historyIndex === 0) {
+            this._valueCache = input.value;
+          }
+          this._setInputValue(historyLine);
+          --this._historyIndex;
+          // The default action for ArrowUp is moving to first character
+          // but we want to keep the cursor at the end.
+          event.preventDefault();
+        }
+      } else if (event.key === 'ArrowDown') {
+        this.resetSearch();
+
+        if (this._historyIndex === 0) {
+          // do nothing
+        } else if (this._historyIndex === -1) {
+          this._setInputValue(this._valueCache);
+          ++this._historyIndex;
+        } else {
+          const historyLine = Stdin._historyAt(
+            this._historyKey,
+            this._historyIndex + 1
+          );
+          if (historyLine) {
+            this._setInputValue(historyLine);
+            ++this._historyIndex;
+          }
+        }
       }
     }
+  }
+
+  protected resetSearch(): void {
+    this._historyPat = '';
   }
 
   /**
@@ -982,13 +1191,6 @@ export class Stdin extends Widget implements IStdin {
    */
   protected onAfterAttach(msg: Message): void {
     this._input.addEventListener('keydown', this);
-    this.update();
-  }
-
-  /**
-   * Handle `update-request` messages sent to the widget.
-   */
-  protected onUpdateRequest(msg: Message): void {
     this._input.focus();
   }
 
@@ -1006,14 +1208,17 @@ export class Stdin extends Widget implements IStdin {
     this._input.setSelectionRange(value.length, value.length);
   }
 
-  private _history_ix: number;
-  private _parentHeader?: KernelMessage.IInputReplyMsg['parent_header'];
   private _future: Kernel.IShellFuture;
+  private _historyIndex: number;
+  private _historyKey: string;
+  private _historyPat: string;
   private _input: HTMLInputElement;
-  private _value: string;
-  private _value_cache: string;
-  private _promise = new PromiseDelegate<void>();
+  private _parentHeader: KernelMessage.IInputReplyMsg['parent_header'];
   private _password: boolean;
+  private _promise = new PromiseDelegate<void>();
+  private _trans: TranslationBundle;
+  private _value: string;
+  private _valueCache: string;
 }
 
 export namespace Stdin {
@@ -1039,7 +1244,17 @@ export namespace Stdin {
     /**
      * The header of the input_request message.
      */
-    parent_header?: KernelMessage.IInputReplyMsg['parent_header'];
+    parent_header: KernelMessage.IInputReplyMsg['parent_header'];
+
+    /**
+     * Translator
+     */
+    readonly translator?: ITranslator;
+
+    /**
+     * Whether to split stdin line history by kernel session or keep globally accessible.
+     */
+    inputHistoryScope?: 'global' | 'session';
   }
 }
 
@@ -1077,7 +1292,8 @@ namespace Private {
    */
   export class IsolatedRenderer
     extends Widget
-    implements IRenderMime.IRenderer {
+    implements IRenderMime.IRenderer
+  {
     /**
      * Create an isolated renderer.
      */
@@ -1191,19 +1407,19 @@ namespace Private {
      * The widget will be disposed on click after calling the callback.
      *
      * @param maxNumberOutputs Maximal number of outputs to display
-     * @param onClick Callback on click event on the widget
+     * @param _onClick Callback on click event on the widget
      */
     constructor(
       maxNumberOutputs: number,
       onClick: (event: MouseEvent) => void
     ) {
       const node = document.createElement('div');
+      const title = `The first ${maxNumberOutputs} are displayed`;
+      const msg = 'Show more outputs';
       node.insertAdjacentHTML(
         'afterbegin',
-        `<a>
-          <pre>Output of this cell has been trimmed on the initial display.</pre>
-          <pre>Displaying the first ${maxNumberOutputs} top outputs.</pre>
-          <pre>Click on this message to get the complete output.</pre>
+        `<a title=${title}>
+          <pre>${msg}</pre>
         </a>`
       );
       super({

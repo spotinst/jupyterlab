@@ -5,6 +5,7 @@ import { Notification, NotificationManager } from '@jupyterlab/apputils';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { Base64ModelFactory } from '@jupyterlab/docregistry';
 import { IRenderMime } from '@jupyterlab/rendermime-interfaces';
+import { ServiceManager } from '@jupyterlab/services';
 import { Token } from '@lumino/coreutils';
 import { JupyterFrontEnd, JupyterFrontEndPlugin } from './frontend';
 import { createRendermimePlugins } from './mimerenderers';
@@ -19,7 +20,17 @@ export class JupyterLab extends JupyterFrontEnd<ILabShell> {
    * Construct a new JupyterLab object.
    */
   constructor(options: JupyterLab.IOptions = { shell: new LabShell() }) {
-    super({ ...options, shell: options.shell || new LabShell() });
+    super({
+      ...options,
+      shell: options.shell || new LabShell(),
+      serviceManager:
+        options.serviceManager ||
+        new ServiceManager({
+          standby: () => {
+            return !this._info.isConnected || 'when-hidden';
+          }
+        })
+    });
     this.restored = this.shell.restored
       .then(() => undefined)
       .catch(() => undefined);
@@ -171,7 +182,7 @@ export class JupyterLab extends JupyterFrontEnd<ILabShell> {
     });
   }
 
-  private _info: JupyterLab.IInfo;
+  private _info: JupyterLab.IInfo = JupyterLab.defaultInfo;
   private _paths: JupyterFrontEnd.IPaths;
 }
 
@@ -183,7 +194,7 @@ export namespace JupyterLab {
    * The options used to initialize a JupyterLab object.
    */
   export interface IOptions
-    extends JupyterFrontEnd.IOptions<LabShell>,
+    extends Partial<JupyterFrontEnd.IOptions<ILabShell>>,
       Partial<IInfo> {
     paths?: Partial<JupyterFrontEnd.IPaths>;
   }
@@ -191,7 +202,10 @@ export namespace JupyterLab {
   /**
    * The layout restorer token.
    */
-  export const IInfo = new Token<IInfo>('@jupyterlab/application:IInfo');
+  export const IInfo = new Token<IInfo>(
+    '@jupyterlab/application:IInfo',
+    'A service providing metadata about the current application, including disabled extensions and whether dev mode is enabled.'
+  );
 
   /**
    * The information about a JupyterLab application.
@@ -221,6 +235,18 @@ export namespace JupyterLab {
      * Whether files are cached on the server.
      */
     readonly filesCached: boolean;
+
+    /**
+     * Every periodic network polling should be paused while this is set
+     * to `false`. Extensions should use this value to decide whether to proceed
+     * with the polling.
+     * The extensions may also set this value to `false` if there is no need to
+     * fetch anything from the server backend basing on some conditions
+     * (e.g. when an error message dialog is displayed).
+     * At the same time, the extensions are responsible for setting this value
+     * back to `true`.
+     */
+    isConnected: boolean;
   }
 
   /**
@@ -231,7 +257,8 @@ export namespace JupyterLab {
     deferred: { patterns: [], matches: [] },
     disabled: { patterns: [], matches: [] },
     mimeExtensions: [],
-    filesCached: PageConfig.getOption('cacheFiles').toLowerCase() === 'true'
+    filesCached: PageConfig.getOption('cacheFiles').toLowerCase() === 'true',
+    isConnected: true
   };
 
   /**

@@ -1,18 +1,12 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import {
-  Dialog,
-  IScore,
-  setToolbar,
-  ToolbarButton
-} from '@jupyterlab/apputils';
+import { Dialog, setToolbar, ToolbarButton } from '@jupyterlab/apputils';
 import { PathExt } from '@jupyterlab/coreutils';
 import { IDocumentManager } from '@jupyterlab/docmanager';
 import { Contents } from '@jupyterlab/services';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
-import { newFolderIcon, refreshIcon } from '@jupyterlab/ui-components';
-import { toArray } from '@lumino/algorithm';
+import { IScore, newFolderIcon, refreshIcon } from '@jupyterlab/ui-components';
 import { PanelLayout, Widget } from '@lumino/widgets';
 import { FileBrowser } from './browser';
 import { FilterFileBrowserModel } from './model';
@@ -58,7 +52,7 @@ export namespace FileDialog {
     /**
      * Filter function on file browser item model
      */
-    filter?: (value: Contents.IModel) => boolean | Partial<IScore> | null;
+    filter?: (value: Contents.IModel) => Partial<IScore> | null;
 
     /**
      * The application language translator.
@@ -84,7 +78,7 @@ export namespace FileDialog {
     const dialogOptions: Partial<Dialog.IOptions<Contents.IModel[]>> = {
       title: options.title,
       buttons: [
-        Dialog.cancelButton({ label: trans.__('Cancel') }),
+        Dialog.cancelButton(),
         Dialog.okButton({
           label: trans.__('Select')
         })
@@ -113,7 +107,9 @@ export namespace FileDialog {
   ): Promise<Dialog.IResult<Contents.IModel[]>> {
     return getOpenFiles({
       ...options,
-      filter: model => model.type === 'directory'
+      filter: model => {
+        return model.type === 'directory' ? {} : null;
+      }
     });
   }
 }
@@ -123,10 +119,11 @@ export namespace FileDialog {
  */
 class OpenDialog
   extends Widget
-  implements Dialog.IBodyWidget<Contents.IModel[]> {
+  implements Dialog.IBodyWidget<Contents.IModel[]>
+{
   constructor(
     manager: IDocumentManager,
-    filter?: (value: Contents.IModel) => boolean | Partial<IScore> | null,
+    filter?: (value: Contents.IModel) => Partial<IScore> | null,
     translator?: ITranslator,
     filterDirectories?: boolean
   ) {
@@ -151,7 +148,7 @@ class OpenDialog
         widget: new ToolbarButton({
           icon: newFolderIcon,
           onClick: () => {
-            browser.createNewDirectory();
+            void browser.createNewDirectory();
           },
           tooltip: trans.__('New Folder')
         })
@@ -185,7 +182,7 @@ class OpenDialog
    * Get the selected items.
    */
   getValue(): Contents.IModel[] {
-    const selection = toArray(this._browser.selectedItems());
+    const selection = Array.from(this._browser.selectedItems());
     if (selection.length === 0) {
       // Return current path
       return [
@@ -235,7 +232,7 @@ namespace Private {
   export const createFilteredFileBrowser = (
     id: string,
     manager: IDocumentManager,
-    filter?: (value: Contents.IModel) => boolean | Partial<IScore> | null,
+    filter?: (value: Contents.IModel) => Partial<IScore> | null,
     options: IFileBrowserFactory.IOptions = {},
     translator?: ITranslator,
     filterDirectories?: boolean

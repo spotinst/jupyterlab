@@ -4,6 +4,7 @@
 |----------------------------------------------------------------------------*/
 
 import MiniCssExtractPlugin from 'mini-css-extract-plugin';
+import miniSVGDataURI from 'mini-svg-data-uri';
 
 import * as webpack from 'webpack';
 import * as fs from 'fs-extra';
@@ -204,15 +205,18 @@ export namespace Build {
           rules: [
             {
               test: /\.css$/,
-              use: [MiniCssExtractPlugin.loader, 'css-loader']
+              use: [MiniCssExtractPlugin.loader, require.resolve('css-loader')]
             },
             {
               test: /\.svg/,
-              use: [{ loader: 'svg-url-loader', options: { encoding: 'none' } }]
+              type: 'asset/inline',
+              generator: {
+                dataUrl: (content: any) => miniSVGDataURI(content.toString())
+              }
             },
             {
               test: /\.(cur|png|jpg|gif|ttf|woff|woff2|eot)(\?v=[0-9]\.[0-9]\.[0-9])?$/,
-              use: [{ loader: 'url-loader', options: { limit: 10000 } }]
+              type: 'asset'
             }
           ]
         },

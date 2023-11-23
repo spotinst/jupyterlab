@@ -3,20 +3,16 @@
 | Distributed under the terms of the Modified BSD License.
 |----------------------------------------------------------------------------*/
 
-import { ISanitizer } from '@jupyterlab/apputils';
-import { CodeMirrorEditor, Mode } from '@jupyterlab/codemirror';
 import { URLExt } from '@jupyterlab/coreutils';
 import { IRenderMime } from '@jupyterlab/rendermime-interfaces';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
-import { toArray } from '@lumino/algorithm';
 import escape from 'lodash.escape';
-import { marked } from 'marked';
 import { removeMath, replaceMath } from './latex';
 
 /**
  * Render HTML into a host node.
  *
- * @params options - The options for rendering.
+ * @param options - The options for rendering.
  *
  * @returns A promise which resolves when rendering is complete.
  */
@@ -126,7 +122,7 @@ export namespace renderHTML {
     /**
      * The html sanitizer for untrusted source.
      */
-    sanitizer: ISanitizer;
+    sanitizer: IRenderMime.ISanitizer;
 
     /**
      * An optional url resolver.
@@ -158,7 +154,7 @@ export namespace renderHTML {
 /**
  * Render an image into a host node.
  *
- * @params options - The options for rendering.
+ * @param options - The options for rendering.
  *
  * @returns A promise which resolves when rendering is complete.
  */
@@ -166,15 +162,8 @@ export function renderImage(
   options: renderImage.IRenderOptions
 ): Promise<void> {
   // Unpack the options.
-  const {
-    host,
-    mimeType,
-    source,
-    width,
-    height,
-    needsBackground,
-    unconfined
-  } = options;
+  const { host, mimeType, source, width, height, needsBackground, unconfined } =
+    options;
 
   // Clear the content in the host.
   host.textContent = '';
@@ -258,7 +247,7 @@ export namespace renderImage {
 /**
  * Render LaTeX into a host node.
  *
- * @params options - The options for rendering.
+ * @param options - The options for rendering.
  *
  * @returns A promise which resolves when rendering is complete.
  */
@@ -313,7 +302,7 @@ export namespace renderLatex {
 /**
  * Render Markdown into a host node.
  *
- * @params options - The options for rendering.
+ * @param options - The options for rendering.
  *
  * @returns A promise which resolves when rendering is complete.
  */
@@ -321,7 +310,7 @@ export async function renderMarkdown(
   options: renderMarkdown.IRenderOptions
 ): Promise<void> {
   // Unpack the options.
-  const { host, source, ...others } = options;
+  const { host, source, markdownParser, ...others } = options;
 
   // Clear the content if there is no source.
   if (!source) {
@@ -329,14 +318,20 @@ export async function renderMarkdown(
     return;
   }
 
-  // Separate math from normal markdown text.
-  const parts = removeMath(source);
+  let html = '';
+  if (markdownParser) {
+    // Separate math from normal markdown text.
+    const parts = removeMath(source);
 
-  // Convert the markdown to HTML.
-  let html = await renderMarkdown.renderMarked(parts['text']);
+    // Convert the markdown to HTML.
+    html = await markdownParser.render(parts['text']);
 
-  // Replace math.
-  html = replaceMath(html, parts['math']);
+    // Replace math.
+    html = replaceMath(html, parts['math']);
+  } else {
+    // Fallback if the application does not have any markdown parser.
+    html = `<pre>${source}</pre>`;
+  }
 
   // Render HTML.
   await renderHTML({
@@ -375,7 +370,7 @@ export namespace renderMarkdown {
     /**
      * The html sanitizer for untrusted source.
      */
-    sanitizer: ISanitizer;
+    sanitizer: IRenderMime.ISanitizer;
 
     /**
      * An optional url resolver.
@@ -398,39 +393,31 @@ export namespace renderMarkdown {
     latexTypesetter: IRenderMime.ILatexTypesetter | null;
 
     /**
+     * The Markdown parser.
+     */
+    markdownParser: IRenderMime.IMarkdownParser | null;
+
+    /**
      * The application language translator.
      */
     translator?: ITranslator;
   }
 
   /**
-   * Render markdown for the specified content.
+   * Create a normalized id for a header element.
    *
-   * @param content - The string of markdown to render.
-   *
-   * @return A promise which resolves with the rendered content.
-   *
-   * @deprecated This will be remove in 4.0.0 as a new plugin `'@jupyterlab/markedparser-extension:plugin'`
-   * will be exporting `IMarkdownParser` token for customization and reuse by other plugins.
+   * @param header Header element
+   * @returns Normalized id
    */
-  export function renderMarked(content: string): Promise<string> {
-    Private.initializeMarked();
-    return new Promise<string>((resolve, reject) => {
-      marked(content, (err: any, content: string) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(content);
-        }
-      });
-    });
+  export function createHeaderId(header: Element): string {
+    return (header.textContent ?? '').replace(/ /g, '-');
   }
 }
 
 /**
  * Render SVG into a host node.
  *
- * @params options - The options for rendering.
+ * @param options - The options for rendering.
  *
  * @returns A promise which resolves when rendering is complete.
  */
@@ -671,7 +658,7 @@ function* alignedNodes<T extends Node, U extends Node>(
 /**
  * Render text into a host node.
  *
- * @params options - The options for rendering.
+ * @param options - The options for rendering.
  *
  * @returns A promise which resolves when rendering is complete.
  */
@@ -693,7 +680,10 @@ export function renderText(options: renderText.IRenderOptions): Promise<void> {
 
   if (preTextContent) {
     // Note: only text nodes and span elements should be present after sanitization in the `<pre>` element.
-    const linkedNodes = autolink(preTextContent);
+    const linkedNodes =
+      sanitizer.getAutolink?.() ?? true
+        ? autolink(preTextContent)
+        : [document.createTextNode(content)];
     let inAnchorElement = false;
 
     const combinedNodes: (HTMLAnchorElement | Text | HTMLSpanElement)[] = [];
@@ -768,7 +758,7 @@ export namespace renderText {
     /**
      * The html sanitizer for untrusted source.
      */
-    sanitizer: ISanitizer;
+    sanitizer: IRenderMime.ISanitizer;
 
     /**
      * The source text to render.
@@ -796,7 +786,7 @@ namespace Private {
    */
   export function evalInnerHTMLScriptTags(host: HTMLElement): void {
     // Create a snapshot of the current script nodes.
-    const scripts = toArray(host.getElementsByTagName('script'));
+    const scripts = Array.from(host.getElementsByTagName('script'));
 
     // Loop over each script node.
     for (const script of scripts) {
@@ -913,7 +903,7 @@ namespace Private {
       const headers = node.getElementsByTagName(headerType);
       for (let i = 0; i < headers.length; i++) {
         const header = headers[i];
-        header.id = (header.textContent ?? '').replace(/ /g, '-');
+        header.id = renderMarkdown.createHeaderId(header);
         const anchor = document.createElement('a');
         anchor.target = '_self';
         anchor.textContent = '¶';
@@ -1007,57 +997,6 @@ namespace Private {
         // just make it an empty link.
         anchor.href = '';
       });
-  }
-
-  let markedInitialized = false;
-
-  /**
-   * Support GitHub flavored Markdown, leave sanitizing to external library.
-   */
-  export function initializeMarked(): void {
-    if (markedInitialized) {
-      return;
-    }
-    markedInitialized = true;
-    marked.setOptions({
-      gfm: true,
-      sanitize: false,
-      // breaks: true; We can't use GFM breaks as it causes problems with tables
-      langPrefix: `cm-s-${CodeMirrorEditor.defaultConfig.theme} language-`,
-      highlight: (code, lang, callback) => {
-        const cb = (err: Error | null, code: string) => {
-          if (callback) {
-            callback(err, code);
-          }
-          return code;
-        };
-        if (!lang) {
-          // no language, no highlight
-          return cb(null, code);
-        }
-        Mode.ensure(lang)
-          .then(spec => {
-            const el = document.createElement('div');
-            if (!spec) {
-              console.error(`No CodeMirror mode: ${lang}`);
-              return cb(null, code);
-            }
-            try {
-              Mode.run(code, spec.mime, el);
-              return cb(null, el.innerHTML);
-            } catch (err) {
-              console.error(`Failed to highlight ${lang} code`, err);
-              return cb(err, code);
-            }
-          })
-          .catch(err => {
-            console.error(`No CodeMirror mode: ${lang}`);
-            console.error(`Require CodeMirror mode error: ${err}`);
-            return cb(null, code);
-          });
-        return code;
-      }
-    });
   }
 
   const ANSI_COLORS = [

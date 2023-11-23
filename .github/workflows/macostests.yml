@@ -2,9 +2,9 @@ name: macOS Tests
 
 on:
   push:
-    branches: [3.6.x]
+    branches: [4.0.x]
   pull_request:
-    branches: [3.6.x]
+    branches: [4.0.x]
   release:
     types: [published]
 
@@ -14,13 +14,13 @@ jobs:
     strategy:
       matrix:
         group: [integrity, python, usage, usage2]
-        python: [3.8]
+        python-version: [3.11]
       fail-fast: false
     timeout-minutes: 45
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Base Setup
         uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1

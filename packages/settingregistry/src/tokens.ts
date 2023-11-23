@@ -3,6 +3,7 @@
 | Distributed under the terms of the Modified BSD License.
 |----------------------------------------------------------------------------*/
 
+import { CellType } from '@jupyterlab/nbformat';
 import { IDataConnector } from '@jupyterlab/statedb';
 import {
   PartialJSONObject,
@@ -14,15 +15,17 @@ import {
 import { IDisposable } from '@lumino/disposable';
 import { ISignal } from '@lumino/signaling';
 import { ISchemaValidator } from './settingregistry';
+import type { RJSFSchema, UiSchema } from '@rjsf/utils';
 
-/* tslint:disable */
 /**
  * The setting registry token.
  */
 export const ISettingRegistry = new Token<ISettingRegistry>(
-  '@jupyterlab/coreutils:ISettingRegistry'
+  '@jupyterlab/coreutils:ISettingRegistry',
+  `A service for the JupyterLab settings system.
+  Use this if you want to store settings for your application.
+  See "schemaDir" for more information.`
 );
-/* tslint:enable */
 
 /**
  * The settings registry interface.
@@ -77,10 +80,15 @@ export interface ISettingRegistry {
    *
    * @param plugin - The name of the plugin whose settings are being loaded.
    *
+   * @param forceTransform - An optional parameter to force replay the transforms methods.
+   *
    * @returns A promise that resolves with a plugin settings object or rejects
    * if the plugin is not found.
    */
-  load(plugin: string): Promise<ISettingRegistry.ISettings>;
+  load(
+    plugin: string,
+    forceTransform?: boolean
+  ): Promise<ISettingRegistry.ISettings>;
 
   /**
    * Reload a plugin's settings into the registry even if they already exist.
@@ -281,6 +289,9 @@ export namespace ISettingRegistry {
     disabled?: boolean;
   }
 
+  /**
+   * An interface describing a context menu item
+   */
   export interface IContextMenuItem extends IMenuItem {
     /**
      * The CSS selector for the context menu item.
@@ -438,6 +449,11 @@ export namespace ISettingRegistry {
     'jupyter.lab.shortcuts'?: IShortcut[];
 
     /**
+     * The JupyterLab metadata-form schema
+     */
+    'jupyter.lab.metadataforms'?: IMetadataForm[];
+
+    /**
      * The root schema is always an object.
      */
     type: 'object';
@@ -526,9 +542,7 @@ export namespace ISettingRegistry {
      *
      * @returns The setting value.
      */
-    get(
-      key: string
-    ): {
+    get(key: string): {
       composite: ReadonlyPartialJSONValue | undefined;
       user: ReadonlyPartialJSONValue | undefined;
     };
@@ -607,6 +621,101 @@ export namespace ISettingRegistry {
      * The CSS selector applicable to the shortcut.
      */
     selector: string;
+  }
+
+  /**
+   * An interface describing the metadata form.
+   */
+  export interface IMetadataForm extends PartialJSONObject {
+    /**
+     * The section unique ID.
+     */
+    id: string;
+
+    /**
+     * The metadata schema.
+     */
+    metadataSchema: IMetadataSchema;
+
+    /**
+     * The ui schema as used by react-JSON-schema-form.
+     */
+    uiSchema?: { [metadataKey: string]: UiSchema };
+
+    /**
+     * The jupyter properties.
+     */
+    metadataOptions?: { [metadataKey: string]: IMetadataOptions };
+
+    /**
+     * The section label.
+     */
+    label?: string;
+
+    /**
+     * The section rank in notebooktools panel.
+     */
+    rank?: number;
+
+    /**
+     * Whether to show the modified field from default value.
+     */
+    showModified?: boolean;
+
+    /**
+     * Keep the plugin at origin of the metadata form.
+     */
+    _origin?: string;
+  }
+
+  /**
+   * The metadata schema as defined in JSON schema.
+   */
+  export interface IMetadataSchema extends RJSFSchema {
+    /**
+     * The properties as defined in JSON schema, and interpretable by react-JSON-schema-form.
+     */
+    properties: { [option: string]: any };
+
+    /**
+     * The required fields.
+     */
+    required?: string[];
+
+    /**
+     * Support for allOf feature of JSON schema (useful for if/then/else).
+     */
+    allOf?: Array<PartialJSONObject>;
+  }
+
+  /**
+   * Options to customize the widget, the field and the relevant metadata.
+   */
+  export interface IMetadataOptions extends PartialJSONObject {
+    /**
+     * Name of a custom react widget registered.
+     */
+    customWidget?: string;
+
+    /**
+     * Name of a custom react field registered.
+     */
+    customField?: string;
+
+    /**
+     * Metadata applied to notebook or cell.
+     */
+    metadataLevel?: 'cell' | 'notebook';
+
+    /**
+     * Cells which should have this metadata.
+     */
+    cellTypes?: CellType[];
+
+    /**
+     * Whether to avoid writing default value in metadata.
+     */
+    writeDefault?: boolean;
   }
 
   /**

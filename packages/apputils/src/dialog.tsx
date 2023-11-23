@@ -1,14 +1,19 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { Button, closeIcon, LabIcon } from '@jupyterlab/ui-components';
-import { ArrayExt, each, map, toArray } from '@lumino/algorithm';
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
+import {
+  Button,
+  closeIcon,
+  LabIcon,
+  ReactWidget,
+  Styling
+} from '@jupyterlab/ui-components';
+import { ArrayExt } from '@lumino/algorithm';
 import { PromiseDelegate } from '@lumino/coreutils';
 import { Message, MessageLoop } from '@lumino/messaging';
 import { Panel, PanelLayout, Widget } from '@lumino/widgets';
 import * as React from 'react';
-import { Styling } from './styling';
-import { ReactWidget } from './vdom';
 import { WidgetTracker } from './widgettracker';
 
 /**
@@ -35,11 +40,11 @@ export function showDialog<T>(
  */
 export function showErrorMessage(
   title: string,
-  error: any,
-  buttons: ReadonlyArray<Dialog.IButton> = [
-    Dialog.okButton({ label: 'Dismiss' })
-  ]
+  error: string | Dialog.IError,
+  buttons?: ReadonlyArray<Dialog.IButton>
 ): Promise<void> {
+  const trans = Dialog.translator.load('jupyterlab');
+  buttons = buttons ?? [Dialog.okButton({ label: trans.__('Dismiss') })];
   console.warn('Showing error:', error);
 
   // Cache promises to prevent multiple copies of identical dialogs showing
@@ -79,7 +84,9 @@ export class Dialog<T> extends Widget {
    * @param options - The dialog setup options.
    */
   constructor(options: Partial<Dialog.IOptions<T>> = {}) {
-    super();
+    const dialogNode = document.createElement('dialog');
+    dialogNode.ariaModal = 'true';
+    super({ node: dialogNode });
     this.addClass('jp-Dialog');
     const normalized = Private.handleOptions(options);
     const renderer = normalized.renderer;
@@ -88,13 +95,10 @@ export class Dialog<T> extends Widget {
     this._defaultButton = normalized.defaultButton;
     this._buttons = normalized.buttons;
     this._hasClose = normalized.hasClose;
-    this._buttonNodes = toArray(
-      map(this._buttons, button => {
-        return renderer.createButtonNode(button);
-      })
-    );
-
+    this._buttonNodes = this._buttons.map(b => renderer.createButtonNode(b));
     this._checkboxNode = null;
+    this._lastMouseDownInDialog = false;
+
     if (normalized.checkbox) {
       const {
         label = '',
@@ -110,13 +114,12 @@ export class Dialog<T> extends Widget {
       });
     }
 
-    this._lastMouseDownInDialog = false;
-
     const layout = (this.layout = new PanelLayout());
     const content = new Panel();
     content.addClass('jp-Dialog-content');
     if (typeof options.body === 'string') {
       content.addClass('jp-Dialog-content-small');
+      dialogNode.ariaLabel = [normalized.title, options.body].join(' ');
     }
     layout.addWidget(content);
 
@@ -133,11 +136,19 @@ export class Dialog<T> extends Widget {
     content.addWidget(body);
     content.addWidget(footer);
 
+    this._bodyWidget = body;
     this._primary = this._buttonNodes[this._defaultButton];
     this._focusNodeSelector = options.focusNodeSelector;
 
     // Add new dialogs to the tracker.
     void Dialog.tracker.add(this);
+  }
+
+  /**
+   * A promise that resolves when the Dialog first rendering is done.
+   */
+  get ready(): Promise<void> {
+    return this._ready.promise;
   }
 
   /**
@@ -258,15 +269,34 @@ export class Dialog<T> extends Widget {
     document.addEventListener('focus', this, true);
     this._first = Private.findFirstFocusable(this.node);
     this._original = document.activeElement as HTMLElement;
-    if (this._focusNodeSelector) {
-      const body = this.node.querySelector('.jp-Dialog-body');
-      const el = body?.querySelector(this._focusNodeSelector);
 
-      if (el) {
-        this._primary = el as HTMLElement;
+    const setFocus = () => {
+      if (this._focusNodeSelector) {
+        const body = this.node.querySelector('.jp-Dialog-body');
+        const el = body?.querySelector(this._focusNodeSelector);
+
+        if (el) {
+          this._primary = el as HTMLElement;
+        }
       }
+      this._primary?.focus();
+      this._ready.resolve();
+    };
+
+    if (
+      this._bodyWidget instanceof ReactWidget &&
+      (this._bodyWidget as ReactWidget).renderPromise !== undefined
+    ) {
+      (this._bodyWidget as ReactWidget)
+        .renderPromise!.then(() => {
+          setFocus();
+        })
+        .catch(() => {
+          console.error("Error while loading Dialog's body");
+        });
+    } else {
+      setFocus();
     }
-    this._primary?.focus();
   }
 
   /**
@@ -457,6 +487,7 @@ export class Dialog<T> extends Widget {
     });
   }
 
+  private _ready: PromiseDelegate<void> = new PromiseDelegate<void>();
   private _buttonNodes: ReadonlyArray<HTMLElement>;
   private _buttons: ReadonlyArray<Dialog.IButton>;
   private _checkboxNode: HTMLElement | null;
@@ -470,12 +501,18 @@ export class Dialog<T> extends Widget {
   private _body: Dialog.Body<T>;
   private _lastMouseDownInDialog: boolean;
   private _focusNodeSelector: string | undefined = '';
+  private _bodyWidget: Widget;
 }
 
 /**
  * The namespace for Dialog class statics.
  */
 export namespace Dialog {
+  /**
+   * Translator object.
+   */
+  export let translator: ITranslator = nullTranslator;
+
   /**
    * The body input types.
    */
@@ -500,6 +537,10 @@ export namespace Dialog {
    * The options used to make a button item.
    */
   export interface IButton {
+    /**
+     * The aria label for the button.
+     */
+    ariaLabel: string;
     /**
      * The label for the button.
      */
@@ -564,6 +605,16 @@ export namespace Dialog {
      * The extra class name for the checkbox.
      */
     className: string;
+  }
+
+  /**
+   * Error object interface
+   */
+  export interface IError {
+    /**
+     * Error message
+     */
+    message: string | React.ReactElement<any>;
   }
 
   /**
@@ -715,8 +766,10 @@ export namespace Dialog {
    */
   export function createButton(value: Partial<IButton>): Readonly<IButton> {
     value.accept = value.accept !== false;
-    const defaultLabel = value.accept ? 'OK' : 'Cancel';
+    const trans = translator.load('jupyterlab');
+    const defaultLabel = value.accept ? trans.__('Ok') : trans.__('Cancel');
     return {
+      ariaLabel: value.ariaLabel || value.label || defaultLabel,
       label: value.label || defaultLabel,
       iconClass: value.iconClass || '',
       iconLabel: value.iconLabel || '',
@@ -805,6 +858,7 @@ export namespace Dialog {
       };
 
       if (typeof title === 'string') {
+        const trans = translator.load('jupyterlab');
         header = ReactWidget.create(
           <>
             {title}
@@ -813,7 +867,7 @@ export namespace Dialog {
                 className="jp-Dialog-close-button"
                 onMouseDown={handleMouseDown}
                 onKeyDown={handleKeyDown}
-                title="Cancel"
+                title={trans.__('Cancel')}
                 minimal
               >
                 <LabIcon.resolveReact
@@ -842,20 +896,39 @@ export namespace Dialog {
      * @returns A widget for the body.
      */
     createBody(value: Body<any>): Widget {
+      const styleReactWidget = (widget: ReactWidget) => {
+        if (widget.renderPromise !== undefined) {
+          widget.renderPromise
+            .then(() => {
+              Styling.styleNode(widget.node);
+            })
+            .catch(() => {
+              console.error("Error while loading Dialog's body");
+            });
+        } else {
+          Styling.styleNode(widget.node);
+        }
+      };
+
       let body: Widget;
       if (typeof value === 'string') {
         body = new Widget({ node: document.createElement('span') });
         body.node.textContent = value;
       } else if (value instanceof Widget) {
         body = value;
+        if (body instanceof ReactWidget) {
+          styleReactWidget(body);
+        } else {
+          Styling.styleNode(body.node);
+        }
       } else {
         body = ReactWidget.create(value);
         // Immediately update the body even though it has not yet attached in
         // order to trigger a render of the DOM nodes from the React element.
         MessageLoop.sendMessage(body, Widget.Msg.UpdateRequest);
+        styleReactWidget(body as ReactWidget);
       }
       body.addClass('jp-Dialog-body');
-      Styling.styleNode(body.node);
       return body;
     }
 
@@ -872,6 +945,7 @@ export namespace Dialog {
       checkbox: HTMLElement | null
     ): Widget {
       const footer = new Widget();
+
       footer.addClass('jp-Dialog-footer');
       if (checkbox) {
         footer.node.appendChild(checkbox);
@@ -880,10 +954,11 @@ export namespace Dialog {
           '<div class="jp-Dialog-spacer"></div>'
         );
       }
-      each(buttons, button => {
+      for (const button of buttons) {
         footer.node.appendChild(button);
-      });
+      }
       Styling.styleNode(footer.node);
+
       return footer;
     }
 
@@ -993,6 +1068,7 @@ export namespace Dialog {
       const e = document.createElement('div');
       e.className = 'jp-Dialog-buttonLabel';
       e.title = data.caption;
+      e.ariaLabel = data.ariaLabel;
       e.appendChild(document.createTextNode(data.label));
       return e;
     }

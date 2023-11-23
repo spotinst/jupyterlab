@@ -1,7 +1,10 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 Privacy policies
 ================
 
-Last modified: December 14, 2022
+Last modified: December 15, 2022
 
 Introduction
 ------------
@@ -47,11 +50,10 @@ Users can also disable the plugin by executing:
 Extension manager plugin
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-The extensions manager plugin fetches extension packages metadata on npm public registry
-(https://registry.npmjs.org/-/v1/) and on a Content Delivery Network (https://unpkg.com)
-and package author thumbnails on GitHub (https://github.com).
+The extensions manager plugin fetches Python packages' metadata from PyPI.org
+(https://pypi.org) and package author thumbnails from GitHub (https://github.com).
 
-The plugin will fetch this information only if the user clicks on the *Enable*
+The plugin will fetch this information only if the user clicks on the *Yes*
 button in the extensions manager side panel.
 That choice is stored as a user preference in *Extension Manager* ->
 *Disclaimed Status*. The user can change their preference later.
@@ -73,15 +75,6 @@ That data is not accessible to and not readable by the JupyterLab development te
 
 GitHub's privacy policy can be found at https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement .
 
-npm
-^^^
-
-The service providing NPM public registry (https://registry.npmjs.org/-/v1/) collects
-data about how you use npm registry.
-That data is not accessible to and not readable for the JupyterLab development team.
-
-The privacy policy of the NPM public registry can be found at https://docs.npmjs.com/policies/privacy.
-
 PyPI.org
 ^^^^^^^^
 
@@ -89,17 +82,6 @@ The service providing Python packages' metadata (https://pypi.org) stores access
 That data is not accessible to and not readable by the JupyterLab development team.
 
 PyPI's privacy policy can be found at https://www.python.org/privacy/.
-
-unpkg.com
-^^^^^^^^^
-
-The service providing NPM packages (https://unpkg.com/) is not providing information about data
-collection.
-If data are collected, they are not accessible to and not readable for the JupyterLab development team.
-
-The project is open source and the origin server is deployed on `Fly.io <https://fly.io/>`_ (see `Fly.io privacy policy <https://fly.io/legal/privacy-policy/>`_)
-and the content delivery network is powered by `Cloudflare <https://www.cloudflare.com/>`_ (see `Cloudflare privacy policy <https://www.cloudflare.com/privacypolicy/>`_).
-
 
 Changes to policy
 -----------------

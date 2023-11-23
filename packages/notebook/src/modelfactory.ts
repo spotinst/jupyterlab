@@ -1,9 +1,8 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { CodeCellModel } from '@jupyterlab/cells';
+import type { ISharedNotebook } from '@jupyter/ydoc';
 import { DocumentRegistry } from '@jupyterlab/docregistry';
-import { IModelDB } from '@jupyterlab/observables';
 import { Contents } from '@jupyterlab/services';
 import { INotebookModel, NotebookModel } from './model';
 
@@ -11,24 +10,16 @@ import { INotebookModel, NotebookModel } from './model';
  * A model factory for notebooks.
  */
 export class NotebookModelFactory
-  implements DocumentRegistry.IModelFactory<INotebookModel> {
+  implements DocumentRegistry.IModelFactory<INotebookModel>
+{
   /**
    * Construct a new notebook model factory.
    */
-  constructor(options: NotebookModelFactory.IOptions) {
-    this._collaborative = options.collaborative ?? true;
+  constructor(options: NotebookModelFactory.IOptions = {}) {
     this._disableDocumentWideUndoRedo =
       options.disableDocumentWideUndoRedo ?? true;
-    const codeCellContentFactory = options.codeCellContentFactory;
-    this.contentFactory =
-      options.contentFactory ||
-      new NotebookModel.ContentFactory({ codeCellContentFactory });
+    this._collaborative = options.collaborative ?? true;
   }
-
-  /**
-   * The content model factory used by the NotebookModelFactory.
-   */
-  readonly contentFactory: NotebookModel.IContentFactory;
 
   /**
    * Define the disableDocumentWideUndoRedo property.
@@ -89,25 +80,16 @@ export class NotebookModelFactory
    * Create a new model for a given path.
    *
    * @param languagePreference - An optional kernel language preference.
-   * @param modelDB - An optional model storage.
-   * @param isInitialized - Whether the model is initialized or not.
-   * @param collaborationEnabled - Whether collaboration is enabled at the application level or not (default `false`).
    *
    * @returns A new document model.
    */
   createNew(
-    languagePreference?: string,
-    modelDB?: IModelDB,
-    isInitialized?: boolean,
-    collaborationEnabled?: boolean
+    options: DocumentRegistry.IModelOptions<ISharedNotebook> = {}
   ): INotebookModel {
-    const contentFactory = this.contentFactory;
     return new NotebookModel({
-      languagePreference,
-      contentFactory,
-      collaborationEnabled: collaborationEnabled && this.collaborative,
-      modelDB,
-      isInitialized,
+      languagePreference: options.languagePreference,
+      sharedModel: options.sharedModel,
+      collaborationEnabled: options.collaborationEnabled && this.collaborative,
       disableDocumentWideUndoRedo: this._disableDocumentWideUndoRedo
     });
   }
@@ -123,7 +105,6 @@ export class NotebookModelFactory
    * Defines if the document can be undo/redo.
    */
   private _disableDocumentWideUndoRedo: boolean;
-
   private _disposed = false;
   private _collaborative: boolean;
 }
@@ -150,16 +131,5 @@ export namespace NotebookModelFactory {
      * @alpha
      */
     disableDocumentWideUndoRedo?: boolean;
-
-    /**
-     * The factory for code cell content.
-     */
-    codeCellContentFactory?: CodeCellModel.IContentFactory;
-
-    /**
-     * The content factory used by the NotebookModelFactory.  If
-     * given, it will supersede the `codeCellContentFactory`.
-     */
-    contentFactory?: NotebookModel.IContentFactory;
   }
 }

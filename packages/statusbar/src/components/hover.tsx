@@ -1,15 +1,9 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import { HoverBox } from '@jupyterlab/apputils';
+import { HoverBox } from '@jupyterlab/ui-components';
 import { Message } from '@lumino/messaging';
 import { PanelLayout, Widget } from '@lumino/widgets';
-import { style } from 'typestyle/lib';
-import { clickedItem, interactiveItem } from '../style/statusbar';
-
-const hoverItem = style({
-  boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)'
-});
 
 /**
  * Create and show a popup component.
@@ -36,7 +30,7 @@ export class Popup extends Widget {
   constructor(options: Omit<Popup.IOptions, 'startHidden'>) {
     super();
     this._body = options.body;
-    this._body.addClass(hoverItem);
+    this._body.addClass('jp-StatusBar-HoverItem');
     this._anchor = options.anchor;
     this._align = options.align;
     if (options.hasDynamicSize) {
@@ -54,12 +48,12 @@ export class Popup extends Widget {
   /**
    * Attach the popup widget to the page.
    */
-  launch() {
+  launch(): void {
     this._setGeometry();
     Widget.attach(this, document.body);
     this.update();
-    this._anchor.addClass(clickedItem);
-    this._anchor.removeClass(interactiveItem);
+    this._anchor.addClass('jp-mod-clicked');
+    this._anchor.removeClass('jp-mod-highlight');
   }
 
   /**
@@ -103,8 +97,8 @@ export class Popup extends Widget {
   dispose(): void {
     this._observer?.disconnect();
     super.dispose();
-    this._anchor.removeClass(clickedItem);
-    this._anchor.addClass(interactiveItem);
+    this._anchor.removeClass('jp-mod-clicked');
+    this._anchor.addClass('jp-mod-highlight');
   }
 
   /**

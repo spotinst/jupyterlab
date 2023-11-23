@@ -57,7 +57,7 @@ test.describe('Notebook Toolbar', () => {
     await page.notebook.clickToolbarItem('cut');
 
     const imageName = 'paste-cell.png';
-    await page.notebook.selectCells(2);
+    await page.notebook.selectCells(1);
     await page.notebook.clickToolbarItem('paste');
     const nbPanel = await page.notebook.getNotebookInPanel();
 
@@ -79,7 +79,6 @@ test.describe('Notebook Toolbar', () => {
 
     await page.notebook.clickToolbarItem('run');
     await page.waitForSelector('text=8');
-    // await page.notebook.waitForRun();
 
     const nbPanel = await page.notebook.getNotebookInPanel();
 
@@ -130,7 +129,9 @@ test('Toolbar items act on owner widget', async ({ page }) => {
   expect(classlist.split(' ')).not.toContain('jp-mod-current');
 
   // When clicking on toolbar item of the first file
-  await (await panel1.$('button[title="Insert a cell below (B)"]')).click();
+  await (
+    await panel1.$('button[data-command="notebook:insert-cell-below"]')
+  ).click();
 
   // Then the first file is activated and the action is performed
   const classlistEnd = await tab1.getAttribute('class');

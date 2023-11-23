@@ -14,12 +14,8 @@ import {
   DocumentWidget,
   IDocumentWidget
 } from '@jupyterlab/docregistry';
-import { FileBrowser, IFileBrowserFactory } from '@jupyterlab/filebrowser';
-import {
-  ContentsManager,
-  Workspace,
-  WorkspaceManager
-} from '@jupyterlab/services';
+import { IDefaultFileBrowser } from '@jupyterlab/filebrowser';
+import { Contents, Workspace, WorkspaceManager } from '@jupyterlab/services';
 import { IStateDB } from '@jupyterlab/statedb';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 import { Widget } from '@lumino/widgets';
@@ -40,9 +36,10 @@ const ICON_NAME = 'jp-JupyterIcon';
  */
 export const workspacesPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/apputils-extension:workspaces',
+  description: 'Add workspace file type and commands.',
   autoStart: true,
   requires: [
-    IFileBrowserFactory,
+    IDefaultFileBrowser,
     IWindowResolver,
     IStateDB,
     ITranslator,
@@ -51,7 +48,7 @@ export const workspacesPlugin: JupyterFrontEndPlugin<void> = {
   optional: [IRouter],
   activate: (
     app: JupyterFrontEnd,
-    fbf: IFileBrowserFactory,
+    fileBrowser: IDefaultFileBrowser,
     resolver: IWindowResolver,
     state: IStateDB,
     translator: ITranslator,
@@ -83,7 +80,7 @@ export const workspacesPlugin: JupyterFrontEndPlugin<void> = {
       execute: async () => {
         const data = app.serviceManager.workspaces.fetch(resolver.name);
         await Private.saveAs(
-          fbf.defaultBrowser,
+          fileBrowser,
           app.serviceManager.contents,
           data,
           state,
@@ -99,13 +96,7 @@ export const workspacesPlugin: JupyterFrontEndPlugin<void> = {
         const data = app.serviceManager.workspaces.fetch(resolver.name);
         const lastSave = (await state.fetch(LAST_SAVE_ID)) as string;
         if (lastSave === undefined) {
-          await Private.saveAs(
-            fbf.defaultBrowser,
-            contents,
-            data,
-            state,
-            translator
-          );
+          await Private.saveAs(fileBrowser, contents, data, state, translator);
         } else {
           await Private.save(lastSave, contents, data, state);
         }
@@ -120,7 +111,7 @@ namespace Private {
    */
   export async function save(
     userPath: string,
-    contents: ContentsManager,
+    contents: Contents.IManager,
     data: Promise<Workspace.IWorkspace>,
     state: IStateDB
   ): Promise<void> {
@@ -150,8 +141,8 @@ namespace Private {
    * Default location is the current directory in the file browser
    */
   export async function saveAs(
-    browser: FileBrowser,
-    contents: ContentsManager,
+    browser: IDefaultFileBrowser,
+    contents: Contents.IManager,
     data: Promise<Workspace.IWorkspace>,
     state: IStateDB,
     translator?: ITranslator
@@ -186,7 +177,8 @@ namespace Private {
     constructor(options: WorkspaceFactory.IOptions) {
       const trans = (options.translator || nullTranslator).load('jupyterlab');
       super({
-        name: trans.__('Workspace loader'),
+        name: 'Workspace loader',
+        label: trans.__('Workspace loader'),
         fileTypes: [WORKSPACE_NAME],
         defaultFor: [WORKSPACE_NAME],
         readOnly: true
@@ -207,7 +199,7 @@ namespace Private {
       // Save a file's contents as a workspace and navigate to that workspace.
       void context.ready.then(async () => {
         const file = context.model;
-        const workspace = (file.toJSON() as unknown) as Workspace.IWorkspace;
+        const workspace = file.toJSON() as unknown as Workspace.IWorkspace;
         const path = context.path;
         const id = workspace.metadata.id;
 
@@ -271,11 +263,14 @@ namespace Private {
   ): Promise<string | null> {
     translator = translator || nullTranslator;
     const trans = translator.load('jupyterlab');
-    const saveBtn = Dialog.okButton({ label: trans.__('Save') });
+    const saveBtn = Dialog.okButton({
+      label: trans.__('Save'),
+      ariaLabel: trans.__('Save Current Workspace')
+    });
     const result = await showDialog({
       title: trans.__('Save Current Workspace As…'),
       body: new SaveWidget(defaultPath),
-      buttons: [Dialog.cancelButton({ label: trans.__('Cancel') }), saveBtn]
+      buttons: [Dialog.cancelButton(), saveBtn]
     });
     if (result.button.label === trans.__('Save')) {
       return result.value;

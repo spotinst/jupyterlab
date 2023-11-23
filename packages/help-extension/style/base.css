@@ -12,6 +12,7 @@
 
 .jp-Help > iframe {
   border: none;
+
   /* Forcing white color to avoid contrast issues see issue #11320 */
   background: white;
 }
@@ -29,6 +30,7 @@
 
 .jp-About-version-info {
   color: var(--jp-ui-font-color1);
+
   /* Dialog-header sets the font size to 3, we reset to 1 */
   font-size: var(--jp-ui-font-size1);
   width: 200px;
@@ -38,18 +40,8 @@
   line-height: 1.12;
 }
 
-.jp-Dialog
-  .jp-Dialog-content
-  .jp-Dialog-footer
-  .jp-Dialog-button.jp-About-button {
-  margin-right: 0px;
-}
-
 .jp-About-version {
   display: block;
-}
-
-.jp-About-version {
   padding-top: 8px;
 }
 
@@ -61,8 +53,9 @@
   padding-top: 12px;
 }
 
-.jp-About-externalLinks .jp-Button-flat {
-  color: #f37726;
+.jp-About-externalLinks > .jp-Button-flat,
+.jp-About-externalLinks > .jp-Button-flat:hover {
+  color: var(--jp-content-link-color);
 }
 
 .jp-About-copyright {
@@ -114,16 +107,18 @@
   display: block;
 }
 
-.jp-Licenses-Filters label strong {
+.jp-Licenses-Filters-title {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1px;
   font-size: var(--jp-ui-font-size0);
+  color: var(--jp-ui-font-color0);
 }
 
 .jp-RenderedHTMLCommon.jp-Licenses-Filters ul,
 .jp-RenderedHTMLCommon.jp-Licenses-Filters li {
   list-style: none;
+  color: var(--jp-ui-font-color0);
 }
 
 .jp-Licenses-Filters input {
@@ -207,7 +202,7 @@
   text-align: left;
 }
 
-.jp-Licenses-Grid table td:nth-child(1) {
+.jp-Licenses-Grid td:nth-child(1) {
   max-width: calc(2 * var(--jp-ui-font-size1));
 }
 
@@ -219,7 +214,7 @@
   background-color: transparent;
 }
 
-.jp-Licenses-Grid table tr.jp-mod-selected {
+.jp-Licenses-Grid tr.jp-mod-selected {
   background-color: var(--jp-brand-color1);
   color: #fff;
 }

@@ -8,16 +8,14 @@ import {
   TextModelFactory
 } from '@jupyterlab/docregistry';
 import { RenderMimeRegistry } from '@jupyterlab/rendermime';
-import { Contents, ServiceManager } from '@jupyterlab/services';
+import { Contents, Drive, ServiceManager } from '@jupyterlab/services';
 import {
   acceptDialog,
   dismissDialog,
-  initNotebookContext,
-  NBTestUtils,
   signalToPromise,
   waitForDialog
-} from '@jupyterlab/testutils';
-import * as Mock from '@jupyterlab/testutils/lib/mock';
+} from '@jupyterlab/testing';
+import { ServiceManagerMock } from '@jupyterlab/services/lib/testutils';
 import { UUID } from '@lumino/coreutils';
 import { Widget } from '@lumino/widgets';
 
@@ -26,7 +24,8 @@ describe('docregistry/context', () => {
   const factory = new TextModelFactory();
 
   beforeAll(() => {
-    manager = new Mock.ServiceManagerMock();
+    manager = new ServiceManagerMock();
+    manager.contents.addDrive(new Drive({ name: 'TestDrive' }));
     return manager.ready;
   });
 
@@ -54,6 +53,17 @@ describe('docregistry/context', () => {
           path: UUID.uuid4() + '.txt'
         });
         expect(context).toBeInstanceOf(Context);
+      });
+
+      it('should set the session path with local path', () => {
+        const localPath = `${UUID.uuid4()}.txt`;
+        context = new Context({
+          manager,
+          factory,
+          path: `TestDrive:${localPath}`
+        });
+
+        expect(context.sessionContext.path).toEqual(localPath);
       });
     });
 
@@ -84,6 +94,17 @@ describe('docregistry/context', () => {
         await context.initialize(true);
         expect(called).toBe(true);
       });
+
+      it('should not contain the file content attribute', async () => {
+        let called = false;
+        context.fileChanged.connect((sender, args) => {
+          // @ts-expect-error content is omitted
+          expect(args['content']).toBeUndefined();
+          called = true;
+        });
+        await context.initialize(true);
+        expect(called).toBe(true);
+      });
     });
 
     describe('#saving', () => {
@@ -92,7 +113,9 @@ describe('docregistry/context', () => {
         let checked = false;
         context.saveState.connect((sender, args) => {
           if (!called) {
+            // eslint-disable-next-line jest/no-conditional-expect
             expect(sender).toBe(context);
+            // eslint-disable-next-line jest/no-conditional-expect
             expect(args).toBe('started');
 
             checked = true;
@@ -111,7 +134,9 @@ describe('docregistry/context', () => {
         let checked = false;
         context.saveState.connect((sender, args) => {
           if (called > 0) {
+            // eslint-disable-next-line jest/no-conditional-expect
             expect(sender).toBe(context);
+            // eslint-disable-next-line jest/no-conditional-expect
             expect(args).toBe('completed');
             checked = true;
           }
@@ -135,6 +160,7 @@ describe('docregistry/context', () => {
         let checked;
         context.saveState.connect((sender, args) => {
           if (called > 0) {
+            // eslint-disable-next-line jest/no-conditional-expect
             expect(sender).toBe(context);
             checked = args;
           }
@@ -142,7 +168,7 @@ describe('docregistry/context', () => {
           called += 1;
         });
 
-        await expect(context.initialize(true)).rejects.toThrowError(
+        await expect(context.initialize(true)).rejects.toThrow(
           'Invalid response: 403 Forbidden'
         );
         expect(called).toBe(2);
@@ -168,7 +194,7 @@ describe('docregistry/context', () => {
     describe('#ready()', () => {
       it('should resolve when the file is saved for the first time', async () => {
         await context.initialize(true);
-        await context.ready;
+        await expect(context.ready).resolves.not.toThrow();
       });
 
       it('should resolve when the file is reverted for the first time', async () => {
@@ -178,30 +204,7 @@ describe('docregistry/context', () => {
           content: 'foo'
         });
         await context.initialize(false);
-        await context.ready;
-      });
-
-      it('should initialize the model when the file is saved for the first time', async () => {
-        const context = await initNotebookContext({ manager });
-        context.model.fromJSON(NBTestUtils.DEFAULT_CONTENT);
-        expect(context.model.cells.canUndo).toBe(true);
-        await context.initialize(true);
-        await context.ready;
-        expect(context.model.cells.canUndo).toBe(false);
-      });
-
-      it('should initialize the model when the file is reverted for the first time', async () => {
-        const context = await initNotebookContext({ manager });
-        await manager.contents.save(context.path, {
-          type: 'notebook',
-          format: 'json',
-          content: NBTestUtils.DEFAULT_CONTENT
-        });
-        context.model.fromJSON(NBTestUtils.DEFAULT_CONTENT);
-        expect(context.model.cells.canUndo).toBe(true);
-        await context.initialize(false);
-        await context.ready;
-        expect(context.model.cells.canUndo).toBe(false);
+        await expect(context.ready).resolves.not.toThrow();
       });
     });
 
@@ -258,6 +261,8 @@ describe('docregistry/context', () => {
         void context.initialize(true);
         await context.ready;
         expect(context.contentsModel!.path).toBe(path);
+        // @ts-expect-error content is omitted
+        expect(context.contentsModel!['content']).toBeUndefined();
       });
     });
 

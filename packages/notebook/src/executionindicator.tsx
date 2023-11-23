@@ -1,21 +1,18 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import {
-  ISessionContext,
-  translateKernelStatuses,
-  VDomModel,
-  VDomRenderer
-} from '@jupyterlab/apputils';
+import { ISessionContext, translateKernelStatuses } from '@jupyterlab/apputils';
 
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 import React from 'react';
-import { interactiveItem, ProgressCircle } from '@jupyterlab/statusbar';
+import { ProgressCircle } from '@jupyterlab/statusbar';
 
 import {
   circleIcon,
   LabIcon,
-  offlineBoltIcon
+  offlineBoltIcon,
+  VDomModel,
+  VDomRenderer
 } from '@jupyterlab/ui-components';
 
 import { Notebook } from './widget';
@@ -67,7 +64,12 @@ export function ExecutionIndicatorComponent(
   }
 
   const progressBar = (percentage: number) => (
-    <ProgressCircle progress={percentage} width={16} height={24} />
+    <ProgressCircle
+      progress={percentage}
+      width={16}
+      height={24}
+      label={trans.__('Kernel status')}
+    />
   );
   const titleFactory = (translatedStatus: string) =>
     trans.__('Kernel status: %1', translatedStatus);
@@ -170,7 +172,7 @@ namespace ExecutionIndicatorComponent {
     /**
      * Execution state of selected notebook.
      */
-    state?: Private.IExecutionState;
+    state?: ExecutionIndicator.IExecutionState;
 
     /**
      * The application language translator.
@@ -189,7 +191,7 @@ export class ExecutionIndicator extends VDomRenderer<ExecutionIndicator.Model> {
   constructor(translator?: ITranslator, showProgress: boolean = true) {
     super(new ExecutionIndicator.Model());
     this.translator = translator || nullTranslator;
-    this.addClass(interactiveItem);
+    this.addClass('jp-mod-highlighted');
   }
 
   /**
@@ -228,6 +230,57 @@ export class ExecutionIndicator extends VDomRenderer<ExecutionIndicator.Model> {
  * A namespace for ExecutionIndicator statics.
  */
 export namespace ExecutionIndicator {
+  /**
+   * Execution state of a notebook.
+   */
+  export interface IExecutionState {
+    /**
+     * Execution status of kernel, this status is deducted from the
+     * number of scheduled code cells.
+     */
+    executionStatus: string;
+
+    /**
+     * Current status of kernel.
+     */
+    kernelStatus: ISessionContext.KernelDisplayStatus;
+
+    /**
+     * Total execution time.
+     */
+    totalTime: number;
+
+    /**
+     * Id of `setInterval`, it is used to start / stop the elapsed time
+     * counter.
+     */
+    interval: number;
+
+    /**
+     * Id of `setTimeout`, it is used to create / clear the state
+     * resetting request.
+     */
+    timeout: number;
+
+    /**
+     * Set of messages scheduled for executing, `executionStatus` is set
+     *  to `idle if the length of this set is 0 and to `busy` otherwise.
+     */
+    scheduledCell: Set<string>;
+
+    /**
+     * Total number of cells requested for executing, it is used to compute
+     * the execution progress in progress bar.
+     */
+    scheduledCellNumber: number;
+
+    /**
+     * Flag to reset the execution state when a code cell is scheduled for
+     * executing.
+     */
+    needReset: boolean;
+  }
+
   /**
    * A VDomModel for the execution status indicator.
    */
@@ -376,9 +429,9 @@ export namespace ExecutionIndicator {
      * @param nb - The notebook used to identify execution
      * state.
      *
-     * @return - The associated execution state.
+     * @returns - The associated execution state.
      */
-    public executionState(nb: Notebook): Private.IExecutionState | undefined {
+    executionState(nb: Notebook): IExecutionState | undefined {
       return this._notebookExecutionProgress.get(nb);
     }
 
@@ -392,7 +445,7 @@ export namespace ExecutionIndicator {
      * these cells. This `Timeout` will be cleared if there is any cell
      * scheduled after that.
      */
-    private _scheduleSwitchToIdle(state: Private.IExecutionState) {
+    private _scheduleSwitchToIdle(state: IExecutionState) {
       window.setTimeout(() => {
         state.executionStatus = 'idle';
         clearInterval(state.interval);
@@ -488,7 +541,7 @@ export namespace ExecutionIndicator {
      *
      * @param  data - the state to be updated.
      */
-    private _tick(data: Private.IExecutionState): void {
+    private _tick(data: IExecutionState): void {
       data.totalTime += 1;
       this.stateChanged.emit(void 0);
     }
@@ -498,7 +551,7 @@ export namespace ExecutionIndicator {
      *
      * @param  data - the state to be rested.
      */
-    private _resetTime(data: Private.IExecutionState): void {
+    private _resetTime(data: IExecutionState): void {
       data.totalTime = 0;
       data.scheduledCellNumber = 0;
       data.executionStatus = 'idle';
@@ -512,7 +565,7 @@ export namespace ExecutionIndicator {
       return this._renderFlag;
     }
 
-    public updateRenderOption(options: {
+    updateRenderOption(options: {
       showOnToolBar: boolean;
       showProgress: boolean;
     }): void {
@@ -542,7 +595,7 @@ export namespace ExecutionIndicator {
      */
     private _notebookExecutionProgress = new WeakMap<
       Notebook,
-      Private.IExecutionState
+      IExecutionState
     >();
 
     /**
@@ -553,8 +606,8 @@ export namespace ExecutionIndicator {
 
   export function createExecutionIndicatorItem(
     panel: NotebookPanel,
-    translator: ITranslator,
-    loadSettings: Promise<ISettingRegistry.ISettings> | undefined
+    translator?: ITranslator,
+    loadSettings?: Promise<ISettingRegistry.ISettings>
   ): Widget {
     const toolbarItem = new ExecutionIndicator(translator);
     toolbarItem.model.displayOption = {
@@ -585,9 +638,7 @@ export namespace ExecutionIndicator {
     return toolbarItem;
   }
 
-  export function getSettingValue(
-    settings: ISettingRegistry.ISettings
-  ): {
+  export function getSettingValue(settings: ISettingRegistry.ISettings): {
     showOnToolBar: boolean;
     showProgress: boolean;
   } {
@@ -607,54 +658,6 @@ export namespace ExecutionIndicator {
  * A namespace for module-private data.
  */
 namespace Private {
-  export interface IExecutionState {
-    /**
-     * Execution status of kernel, this status is deducted from the
-     * number of scheduled code cells.
-     */
-    executionStatus: string;
-
-    /**
-     * Current status of kernel.
-     */
-    kernelStatus: ISessionContext.KernelDisplayStatus;
-
-    /**
-     * Total execution time.
-     */
-    totalTime: number;
-
-    /**
-     * Id of `setInterval`, it is used to start / stop the elapsed time
-     * counter.
-     */
-    interval: number;
-
-    /**
-     * Id of `setTimeout`, it is used to create / clear the state
-     * resetting request.
-     */
-    timeout: number;
-
-    /**
-     * Set of messages scheduled for executing, `executionStatus` is set
-     *  to `idle if the length of this set is 0 and to `busy` otherwise.
-     */
-    scheduledCell: Set<string>;
-
-    /**
-     * Total number of cells requested for executing, it is used to compute
-     * the execution progress in progress bar.
-     */
-    scheduledCellNumber: number;
-
-    /**
-     * Flag to reset the execution state when a code cell is scheduled for
-     * executing.
-     */
-    needReset: boolean;
-  }
-
   export type DisplayOption = {
     /**
      * The option to show the indicator on status bar or toolbar.

@@ -6,7 +6,7 @@ import { IChangedArgs, Time } from '@jupyterlab/coreutils';
 import { DocumentRegistry, IDocumentWidget } from '@jupyterlab/docregistry';
 import { Contents } from '@jupyterlab/services';
 import { ITranslator, nullTranslator } from '@jupyterlab/translation';
-import { ArrayExt, each, filter, find, map, toArray } from '@lumino/algorithm';
+import { ArrayExt, find } from '@lumino/algorithm';
 import { DisposableSet, IDisposable } from '@lumino/disposable';
 import { IMessageHandler, Message, MessageLoop } from '@lumino/messaging';
 import { AttachedProperty } from '@lumino/properties';
@@ -114,12 +114,12 @@ export class DocumentWidgetManager implements IDisposable {
     Private.factoryProperty.set(widget, factory);
     // Handle widget extensions.
     const disposables = new DisposableSet();
-    each(this._registry.widgetExtensions(factory.name), extender => {
+    for (const extender of this._registry.widgetExtensions(factory.name)) {
       const disposable = extender.createNew(widget, context);
       if (disposable) {
         disposables.add(disposable);
       }
-    });
+    }
     Private.disposablesProperty.set(widget, disposables);
     widget.disposed.connect(this._onWidgetDisposed, this);
 
@@ -223,9 +223,9 @@ export class DocumentWidgetManager implements IDisposable {
    */
   closeWidgets(context: DocumentRegistry.Context): Promise<void> {
     const widgets = Private.widgetsProperty.get(context);
-    return Promise.all(
-      toArray(map(widgets, widget => this.onClose(widget)))
-    ).then(() => undefined);
+    return Promise.all(widgets.map(widget => this.onClose(widget))).then(
+      () => undefined
+    );
   }
 
   /**
@@ -236,9 +236,9 @@ export class DocumentWidgetManager implements IDisposable {
    */
   deleteWidgets(context: DocumentRegistry.Context): Promise<void> {
     const widgets = Private.widgetsProperty.get(context);
-    return Promise.all(
-      toArray(map(widgets, widget => this.onDelete(widget)))
-    ).then(() => undefined);
+    return Promise.all(widgets.map(widget => this.onDelete(widget))).then(
+      () => undefined
+    );
   }
 
   /**
@@ -374,15 +374,13 @@ export class DocumentWidgetManager implements IDisposable {
       return Promise.resolve([true, true]);
     }
     // Filter by whether the factories are read only.
-    widgets = toArray(
-      filter(widgets, widget => {
-        const factory = Private.factoryProperty.get(widget);
-        if (!factory) {
-          return false;
-        }
-        return factory.readOnly === false;
-      })
-    );
+    widgets = widgets.filter(widget => {
+      const factory = Private.factoryProperty.get(widget);
+      if (!factory) {
+        return false;
+      }
+      return factory.readOnly === false;
+    });
     const fileName = widget.title.label;
 
     const factory = Private.factoryProperty.get(widget);
@@ -396,14 +394,20 @@ export class DocumentWidgetManager implements IDisposable {
       const buttons = [
         Dialog.cancelButton(),
         Dialog.okButton({
-          label: isDirty ? trans.__('Close and save') : trans.__('Close')
+          label: isDirty ? trans.__('Close and save') : trans.__('Close'),
+          ariaLabel: isDirty
+            ? trans.__('Close and save Document')
+            : trans.__('Close Document')
         })
       ];
       if (isDirty) {
         buttons.splice(
           1,
           0,
-          Dialog.warnButton({ label: trans.__('Close without saving') })
+          Dialog.warnButton({
+            label: trans.__('Close without saving'),
+            ariaLabel: trans.__('Close Document without saving')
+          })
         );
       }
 
@@ -441,12 +445,14 @@ export class DocumentWidgetManager implements IDisposable {
         title: trans.__('Save your work'),
         body: trans.__('Save changes in "%1" before closing?', fileName),
         buttons: [
-          Dialog.cancelButton({ label: trans.__('Cancel') }),
-          Dialog.warnButton({ label: trans.__('Discard') }),
+          Dialog.cancelButton(),
+          Dialog.warnButton({
+            label: trans.__('Discard'),
+            ariaLabel: trans.__('Discard changes to file')
+          }),
           Dialog.okButton({ label: saveLabel })
         ]
       });
-
       return [result.button.accept, result.button.displayType === 'warn'];
     }
   }
@@ -484,9 +490,9 @@ export class DocumentWidgetManager implements IDisposable {
    */
   private _onFileChanged(context: DocumentRegistry.Context): void {
     const widgets = Private.widgetsProperty.get(context);
-    each(widgets, widget => {
+    for (const widget of widgets) {
       void this.setCaption(widget);
-    });
+    }
   }
 
   /**
@@ -494,9 +500,9 @@ export class DocumentWidgetManager implements IDisposable {
    */
   private _onPathChanged(context: DocumentRegistry.Context): void {
     const widgets = Private.widgetsProperty.get(context);
-    each(widgets, widget => {
+    for (const widget of widgets) {
       void this.setCaption(widget);
-    });
+    }
   }
 
   protected translator: ITranslator;

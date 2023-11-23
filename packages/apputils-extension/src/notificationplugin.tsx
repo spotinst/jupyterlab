@@ -10,10 +10,7 @@ import {
 import {
   Notification,
   NotificationManager,
-  ReactWidget,
-  ToolbarButtonComponent,
-  UseSignal,
-  VDomModel
+  ReactWidget
 } from '@jupyterlab/apputils';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import {
@@ -33,11 +30,18 @@ import {
   Button,
   closeIcon,
   deleteIcon,
-  LabIcon
+  LabIcon,
+  ToolbarButtonComponent,
+  UseSignal,
+  VDomModel
 } from '@jupyterlab/ui-components';
-import { ReadonlyJSONObject, ReadonlyJSONValue } from '@lumino/coreutils';
+import {
+  PromiseDelegate,
+  ReadonlyJSONObject,
+  ReadonlyJSONValue
+} from '@lumino/coreutils';
 import * as React from 'react';
-import * as ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import type {
   ClearWaitingQueueParams,
   CloseButtonProps,
@@ -364,12 +368,12 @@ function NotificationStatus(props: INotificationStatusProps): JSX.Element {
  */
 export const notificationPlugin: JupyterFrontEndPlugin<void> = {
   id: '@jupyterlab/apputils-extension:notification',
+  description: 'Add the notification center and its status indicator.',
   autoStart: true,
-  requires: [IStatusBar],
-  optional: [ISettingRegistry, ITranslator],
+  optional: [IStatusBar, ISettingRegistry, ITranslator],
   activate: (
     app: JupyterFrontEnd,
-    statusBar: IStatusBar,
+    statusBar: IStatusBar | null,
     settingRegistry: ISettingRegistry | null,
     translator: ITranslator | null
   ): void => {
@@ -569,26 +573,23 @@ export const notificationPlugin: JupyterFrontEndPlugin<void> = {
         });
 
         // Dismiss all toasts when opening the notification center
-        const finalize = () => {
-          popup?.launch();
-
-          // Focus on the pop-up
-          notificationList.node.focus();
-
-          popup?.disposed.connect(() => {
-            model.listOpened = false;
-            popup = null;
-          });
-        };
-
         Private.toast()
           .then(t => {
             t.dismiss();
-            finalize();
           })
           .catch(r => {
             console.error(`Failed to dismiss all toasts:\n${r}`);
-            finalize();
+          })
+          .finally(() => {
+            popup?.launch();
+
+            // Focus on the pop-up
+            notificationList.node.focus();
+
+            popup?.disposed.connect(() => {
+              model.listOpened = false;
+              popup = null;
+            });
           });
       }
 
@@ -622,11 +623,13 @@ export const notificationPlugin: JupyterFrontEndPlugin<void> = {
 
     notificationStatus.addClass('jp-Notification-Status');
 
-    statusBar.registerStatusItem(notificationPlugin.id, {
-      item: notificationStatus,
-      align: 'right',
-      rank: -1
-    });
+    if (statusBar) {
+      statusBar.registerStatusItem(notificationPlugin.id, {
+        item: notificationStatus,
+        align: 'right',
+        rank: -1
+      });
+    }
   }
 };
 
@@ -663,16 +666,16 @@ namespace Private {
     closeIconMargin?: boolean;
   }
 
-  export function CloseButton(props: ICloseButtonProps): JSX.Element {
+  export function CloseButton(props: ICloseButtonProps) {
     return (
       <button
-        className={`bp3-button bp3-minimal jp-Button jp-mod-minimal ${TOAST_CLOSE_BUTTON_CLASS}${
+        className={`jp-Button jp-mod-minimal ${TOAST_CLOSE_BUTTON_CLASS}${
           props.closeIconMargin ? ` ${TOAST_CLOSE_BUTTON_MARGIN_CLASS}` : ''
         }`}
         title={props.title ?? ''}
         onClick={props.close}
       >
-        <props.closeIcon tag="span" />
+        <props.closeIcon className="jp-icon-hover" tag="span" />
       </button>
     );
   }
@@ -750,12 +753,20 @@ namespace Private {
     onChange(callback: (toast: ToastItem) => void): () => void;
   }
 
+  let waitForToastify: PromiseDelegate<void> | null = null;
+
   /**
    * Asynchronously load the toast container
    *
    * @returns The toast object
    */
   export async function toast(): Promise<IToast> {
+    if (waitForToastify === null) {
+      waitForToastify = new PromiseDelegate();
+    } else {
+      await waitForToastify.promise;
+    }
+
     if (toastify === null) {
       toastify = await import('react-toastify');
 
@@ -763,8 +774,9 @@ namespace Private {
         document.createElement('div')
       );
       container.id = 'react-toastify-container';
+      const root = createRoot(container);
 
-      ReactDOM.render(
+      root.render(
         <toastify.ToastContainer
           draggable={false}
           closeOnClick={false}
@@ -776,9 +788,10 @@ namespace Private {
           className="jp-toastContainer"
           transition={toastify.Slide}
           closeButton={ToastifyCloseButton}
-        />,
-        container
+        />
       );
+
+      waitForToastify.resolve();
     }
 
     return toastify.toast;
@@ -912,11 +925,11 @@ namespace Private {
     } as any;
 
     return t(
-      ({ closeToast }: { closeToast: () => void }) =>
+      ({ closeToast }: { closeToast?: () => void }) =>
         createContent(
           message,
           () => {
-            closeToast();
+            if (closeToast) closeToast();
             Notification.manager.dismiss(toastId);
           },
           actions

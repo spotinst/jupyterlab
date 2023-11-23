@@ -1,17 +1,41 @@
+.. Copyright (c) Jupyter Development Team.
+.. Distributed under the terms of the Modified BSD License.
+
 .. _binder:
 
 JupyterLab on Binder
 ====================
 
-JupyterLab works out of the box with Binder, and can even run side by side
-with the classic Notebook.
+Customize the layout
+--------------------
 
-Override default settings
-^^^^^^^^^^^^^^^^^^^^^^^^^
+A specific layout of JupyterLab can be saved as workspace to be restored later or
+to be shared with others.
 
-It can be useful to change the default settings of JupyterLab for example to
-deactivate the announcements feature.
-To do that, you will need to add those two files in your Binder configuration:
+To specify a workspace on Binder, you first need to export the layout you want to
+use. For that launch JupyterLab and arrange the application in the layout you prefer.
+Then you can export it through the menu ``File -> Save Current Workspace As…``.
+
+Now you need to copy that file in the Binder configuration folder and import it in
+the ``postBuild`` script. Assuming the binder workspace file is stored at ``binder/workspace.jupyterlab-workspace``:
+
+.. code-block:: sh
+    :caption: postBuild
+
+    #!/usr/bin/env bash
+    set -eux
+
+    conda run -n notebook jupyter lab workspaces import --name default binder/workspace.jupyterlab-workspace
+
+Customize user settings
+-----------------------
+
+To customize the user settings on a Binder instance, you can define a ``overrides.json``
+that will contain a dictionary whose primary keys are the plugin ids and the values
+are the new settings.
+
+For example to deactivate the announcements on Binder, you will have to override
+the following setting:
 
 .. code-block:: json
     :caption: overrides.json
@@ -22,6 +46,8 @@ To do that, you will need to add those two files in your Binder configuration:
       }
     }
 
+Then you will have to copy that file in a special folder:
+
 .. code-block:: sh
     :caption: postBuild
 
@@ -30,26 +56,3 @@ To do that, you will need to add those two files in your Binder configuration:
 
     mkdir -p ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings
     cp overrides.json ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings
-
-Jupyter Server v2 or above
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Starting with JupyterLab 3.5.0, you can use either Jupyter Server v1 or v2. That
-dependency is maintained independently of JupyterLab as another project within
-the Jupyter organization. The source code and issues tracker can be found on `GitHub <https://github.com/jupyter-server/jupyter_server/>`__.
-
-Unfortunately by default, Binder does not support Jupyter Server v2 or above. If
-you need that specific version (e.g. it is needed for real time collaboration 
-starting with JupyterLab 3.6.0), you will need to add the following file in your Binder
-configuration to override the default application start up:
-
-.. code-block:: sh
-    :caption: start
-
-    #!/bin/bash
-
-    set -e
-
-    echo $@
-
-    exec jupyter-lab "${@:4}"

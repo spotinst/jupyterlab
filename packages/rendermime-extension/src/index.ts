@@ -15,11 +15,13 @@ import { ISanitizer } from '@jupyterlab/apputils';
 import { IDocumentManager } from '@jupyterlab/docmanager';
 import {
   ILatexTypesetter,
+  IMarkdownParser,
+  IRenderMime,
   IRenderMimeRegistry,
   RenderMimeRegistry,
   standardRendererFactories
 } from '@jupyterlab/rendermime';
-import { ITranslator } from '@jupyterlab/translation';
+import { ITranslator, nullTranslator } from '@jupyterlab/translation';
 
 namespace CommandIDs {
   export const handleLink = 'rendermime:handle-local-link';
@@ -30,8 +32,14 @@ namespace CommandIDs {
  */
 const plugin: JupyterFrontEndPlugin<IRenderMimeRegistry> = {
   id: '@jupyterlab/rendermime-extension:plugin',
-  requires: [ITranslator],
-  optional: [IDocumentManager, ILatexTypesetter, ISanitizer],
+  description: 'Provides the render mime registry.',
+  optional: [
+    IDocumentManager,
+    ILatexTypesetter,
+    ISanitizer,
+    IMarkdownParser,
+    ITranslator
+  ],
   provides: IRenderMimeRegistry,
   activate: activate,
   autoStart: true
@@ -47,12 +55,13 @@ export default plugin;
  */
 function activate(
   app: JupyterFrontEnd,
-  translator: ITranslator,
   docManager: IDocumentManager | null,
   latexTypesetter: ILatexTypesetter | null,
-  sanitizer: ISanitizer | null
+  sanitizer: IRenderMime.ISanitizer | null,
+  markdownParser: IMarkdownParser | null,
+  translator: ITranslator | null
 ): RenderMimeRegistry {
-  const trans = translator.load('jupyterlab');
+  const trans = (translator ?? nullTranslator).load('jupyterlab');
   if (docManager) {
     app.commands.addCommand(CommandIDs.handleLink, {
       label: trans.__('Handle Local Link'),
@@ -68,9 +77,8 @@ function activate(
           .then(() => {
             // Open the link with the default rendered widget factory,
             // if applicable.
-            const factory = docManager.registry.defaultRenderedWidgetFactory(
-              path
-            );
+            const factory =
+              docManager.registry.defaultRenderedWidgetFactory(path);
             const widget = docManager.openOrReveal(path, factory.name);
 
             // Handle the hash if one has been provided.
@@ -99,7 +107,8 @@ function activate(
           }
         },
     latexTypesetter: latexTypesetter ?? undefined,
-    translator: translator,
+    markdownParser: markdownParser ?? undefined,
+    translator: translator ?? undefined,
     sanitizer: sanitizer ?? undefined
   });
 }

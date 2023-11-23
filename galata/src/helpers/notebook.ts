@@ -1,17 +1,22 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
-import * as nbformat from '@jupyterlab/nbformat';
-import { NotebookPanel } from '@jupyterlab/notebook';
+import type * as nbformat from '@jupyterlab/nbformat';
+import type { NotebookPanel } from '@jupyterlab/notebook';
 import { ElementHandle, Page } from '@playwright/test';
 import * as path from 'path';
+import { ContentsHelper } from '../contents';
+import type { INotebookRunCallback } from '../extension';
 import { galata } from '../galata';
-import { INotebookRunCallback } from '../inpage/tokens';
 import * as Utils from '../utils';
 import { ActivityHelper } from './activity';
-import { ContentsHelper } from '../contents';
 import { FileBrowserHelper } from './filebrowser';
 import { MenuHelper } from './menu';
+
+/**
+ * Maximal number of retries to get a cell
+ */
+const MAX_RETRIES = 3;
 
 /**
  * Notebook helpers
@@ -116,7 +121,7 @@ export class NotebookHelper {
     const nbPanel = await this.activity.getPanel(name);
 
     if (nbPanel) {
-      return await nbPanel.$('.jp-NotebookPanel-toolbar');
+      return await nbPanel.$('.jp-Toolbar');
     }
 
     return null;
@@ -164,7 +169,7 @@ export class NotebookHelper {
 
     if (toolbar) {
       const itemIndex = await this.page.evaluate(async (itemId: string) => {
-        return window.galataip.getNotebookToolbarItemIndex(itemId);
+        return window.galata.getNotebookToolbarItemIndex(itemId);
       }, itemId);
 
       return this.getToolbarItemByIndex(itemIndex);
@@ -204,12 +209,12 @@ export class NotebookHelper {
   async activate(name: string): Promise<boolean> {
     if (await this.activity.activateTab(name)) {
       await this.page.evaluate(async () => {
-        const galataip = window.galataip;
-        const nbPanel = galataip.app.shell.currentWidget as NotebookPanel;
+        const galata = window.galata;
+        const nbPanel = galata.app.shell.currentWidget as NotebookPanel;
         await nbPanel.sessionContext.ready;
         // Assuming that if the session is ready, the kernel is ready also for now and commenting out this line
         // await nbPanel.session.kernel.ready;
-        galataip.app.shell.activateById(nbPanel.id);
+        galata.app.shell.activateById(nbPanel.id);
       });
 
       return true;
@@ -229,7 +234,7 @@ export class NotebookHelper {
     }
 
     await this.page.evaluate(async () => {
-      await window.galataip.saveActiveNotebook();
+      await window.galata.saveActiveNotebook();
     });
 
     return true;
@@ -246,7 +251,7 @@ export class NotebookHelper {
     }
 
     await this.page.evaluate(async () => {
-      const app = window.galataip.app;
+      const app = window.galata.app;
       const nbPanel = app.shell.currentWidget as NotebookPanel;
       await nbPanel.context.revert();
     });
@@ -264,6 +269,9 @@ export class NotebookHelper {
       return false;
     }
 
+    await this.page.evaluate(() => {
+      window.galata.resetExecutionCount();
+    });
     await this.menu.clickMenuItem('Run>Run All Cells');
     await this.waitForRun();
 
@@ -334,19 +342,56 @@ export class NotebookHelper {
               }
             } as INotebookRunCallback);
 
-      await window.galataip.runActiveNotebookCellByCell(callbacks);
+      await window.galata.runActiveNotebookCellByCell(callbacks);
     }, callbackName);
 
     return true;
   }
 
   /**
-   * Wait for notebook cells execution to finish
+   * Trust the active notebook
+   *
+   * @returns Whether the action succeeded or not.
    */
-  async waitForRun(): Promise<void> {
-    await this.page.evaluate(async () => {
-      await window.galataip.waitForNotebookRun();
-    });
+  async trust(): Promise<boolean> {
+    if (
+      (await this.isAnyActive()) &&
+      (await this.page
+        .locator('[data-icon="ui-components:not-trusted"]')
+        .count()) === 1
+    ) {
+      await this.page.keyboard.press('Control+Shift+C');
+      await this.page.getByPlaceholder('SEARCH', { exact: true }).fill('trust');
+      await this.page.getByText('Trust Notebook').click();
+      await this.page.getByRole('button', { name: 'Trust' }).click();
+
+      return (
+        (await this.page
+          .locator('[data-icon="ui-components:trusted"]')
+          .count()) === 1
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * Wait for notebook cells execution to finish
+   *
+   * @param cellIndex Cell index
+   */
+  async waitForRun(cellIndex?: number): Promise<void> {
+    const idleLocator = this.page.locator('#jp-main-statusbar >> text=Idle');
+    await idleLocator.waitFor();
+
+    // Wait for all cells to have an execution count
+    let done = false;
+    do {
+      await this.page.waitForTimeout(20);
+      done = await this.page.evaluate(cellIdx => {
+        return window.galata.haveBeenExecuted(cellIdx);
+      }, cellIndex);
+    } while (!done);
   }
 
   /**
@@ -409,9 +454,37 @@ export class NotebookHelper {
       return -1;
     }
 
-    const cells = await notebook.$$('div.jp-Cell');
+    const scrollTop = await notebook.evaluate(node => node.scrollTop);
 
-    return cells.length;
+    // Scroll to bottom
+    let previousScrollHeight = scrollTop;
+    let scrollHeight =
+      previousScrollHeight +
+      (await notebook.evaluate(node => node.clientHeight));
+    do {
+      await notebook.evaluate((node, scrollTarget) => {
+        node.scrollTo({ top: scrollTarget });
+      }, scrollHeight);
+      await this.page.waitForTimeout(50);
+      previousScrollHeight = scrollHeight;
+      scrollHeight = await notebook.evaluate(
+        node => node.scrollHeight - node.clientHeight
+      );
+    } while (scrollHeight > previousScrollHeight);
+
+    const lastCell = await notebook.$$('div.jp-Cell >> nth=-1');
+    const count =
+      parseInt(
+        (await lastCell[0].getAttribute('data-windowed-list-index')) ?? '0',
+        10
+      ) + 1;
+
+    // Scroll back to original position
+    await notebook.evaluate((node, scrollTarget) => {
+      node.scrollTo({ top: scrollTarget });
+    }, scrollTop);
+
+    return count;
   };
 
   /**
@@ -426,13 +499,94 @@ export class NotebookHelper {
       return null;
     }
 
-    const cells = await notebook.$$('div.jp-Cell');
+    const allCells = await notebook.$$('div.jp-Cell');
+    const filters = await Promise.all(allCells.map(c => c.isVisible()));
+    const cells = allCells.filter((c, i) => filters[i]);
 
-    if (cellIndex < 0 || cellIndex >= cells.length) {
-      return null;
+    const firstCell = cells[0];
+    const lastCell = cells[cells.length - 1];
+
+    let firstIndex = parseInt(
+      (await firstCell.getAttribute('data-windowed-list-index')) ?? '0',
+      10
+    );
+    let lastIndex = parseInt(
+      (await lastCell.getAttribute('data-windowed-list-index')) ?? '0',
+      10
+    );
+
+    if (cellIndex < firstIndex) {
+      // Scroll up
+      let scrollTop =
+        (await firstCell.boundingBox())?.y ??
+        (await notebook.evaluate(node => node.scrollTop - node.clientHeight));
+
+      do {
+        await notebook.evaluate((node, scrollTarget) => {
+          node.scrollTo({ top: scrollTarget });
+        }, scrollTop);
+        await this.page.waitForTimeout(50);
+
+        const cells = await notebook.$$('div.jp-Cell');
+        const isVisible = await Promise.all(cells.map(c => c.isVisible()));
+        const firstCell = isVisible.findIndex(visibility => visibility);
+
+        firstIndex = parseInt(
+          (await cells[firstCell].getAttribute('data-windowed-list-index')) ??
+            '0',
+          10
+        );
+        scrollTop =
+          (await cells[firstCell].boundingBox())?.y ??
+          (await notebook.evaluate(node => node.scrollTop - node.clientHeight));
+      } while (scrollTop > 0 && firstIndex > cellIndex);
+    } else if (cellIndex > lastIndex) {
+      const clientHeight = await notebook.evaluate(node => node.clientHeight);
+      // Scroll down
+      const viewport = await (
+        await notebook.$$('.jp-WindowedPanel-window')
+      )[0].boundingBox();
+      let scrollHeight = viewport!.y + viewport!.height;
+      let previousScrollHeight = 0;
+
+      do {
+        previousScrollHeight = scrollHeight;
+        await notebook.evaluate((node, scrollTarget) => {
+          node.scrollTo({ top: scrollTarget });
+        }, scrollHeight);
+        await this.page.waitForTimeout(50);
+
+        const cells = await notebook.$$('div.jp-Cell');
+        const isVisible = await Promise.all(cells.map(c => c.isVisible()));
+        const lastCell = isVisible.lastIndexOf(true);
+
+        lastIndex = parseInt(
+          (await cells[lastCell].getAttribute('data-windowed-list-index')) ??
+            '0',
+          10
+        );
+
+        const viewport = await (
+          await notebook.$$('.jp-WindowedPanel-window')
+        )[0].boundingBox();
+        scrollHeight = viewport!.y + viewport!.height;
+        // Avoid jitter
+        scrollHeight = Math.max(
+          previousScrollHeight + clientHeight,
+          scrollHeight
+        );
+      } while (scrollHeight > previousScrollHeight && lastIndex < cellIndex);
     }
 
-    return cells[cellIndex];
+    if (firstIndex <= cellIndex && cellIndex <= lastIndex) {
+      return (
+        await notebook.$$(
+          `div.jp-Cell[data-windowed-list-index="${cellIndex}"]`
+        )
+      )[0];
+    } else {
+      return null;
+    }
   }
 
   /**
@@ -705,6 +859,117 @@ export class NotebookHelper {
   }
 
   /**
+   * Clicks a cell gutter line for code cells
+   *
+   * @param cellIndex Cell index
+   * @param lineNumber Cell line number, starts at 1
+   */
+  async clickCellGutter(
+    cellIndex: number,
+    lineNumber: number
+  ): Promise<boolean> {
+    if (lineNumber < 1) {
+      return false;
+    }
+
+    if (!(await this.isCellGutterPresent(cellIndex))) {
+      return false;
+    }
+
+    const cell = await this.getCell(cellIndex);
+    const gutters = await cell!.$$(
+      '.cm-gutters > .cm-gutter.cm-breakpoint-gutter > .cm-gutterElement'
+    );
+    if (gutters.length < lineNumber) {
+      return false;
+    }
+    await gutters[lineNumber].click();
+    return true;
+  }
+
+  /**
+   * Check if cell gutter is present
+   *
+   * @param cellIndex
+   */
+  async isCellGutterPresent(cellIndex: number): Promise<boolean> {
+    const cell = await this.getCell(cellIndex);
+    if (!cell) {
+      return false;
+    }
+    return (await cell.$('.cm-gutters')) !== null;
+  }
+
+  /**
+   * Wait until cell gutter is visible
+   *
+   * @param cellIndex
+   */
+  async waitForCellGutter(cellIndex: number): Promise<void> {
+    const cell = await this.getCell(cellIndex);
+    if (cell) {
+      await this.page.waitForSelector('.cm-gutters', {
+        state: 'attached'
+      });
+    }
+  }
+
+  /**
+   * Clicks a code gutter line for scripts
+   *
+   * @param lineNumber Cell line number, starts at 1
+   */
+  async clickCodeGutter(lineNumber: number): Promise<boolean> {
+    if (lineNumber < 1) {
+      return false;
+    }
+
+    if (!(await this.isCodeGutterPresent())) {
+      return false;
+    }
+
+    const panel = await this.activity.getPanel();
+    await panel!.waitForSelector(
+      '.cm-gutters > .cm-gutter.cm-breakpoint-gutter > .cm-gutterElement',
+      { state: 'attached' }
+    );
+    const gutters = await panel!.$$(
+      '.cm-gutters > .cm-gutter.cm-breakpoint-gutter > .cm-gutterElement'
+    );
+    if (gutters.length < lineNumber) {
+      return false;
+    }
+    await gutters[lineNumber].click();
+    return true;
+  }
+
+  /**
+   * Check if code gutter is present
+   *
+   */
+  async isCodeGutterPresent(): Promise<boolean> {
+    const panel = await this.activity.getPanel();
+    if (!panel) {
+      return false;
+    }
+    return (await panel.$('.cm-gutters')) !== null;
+  }
+
+  /**
+   * Wait until cell gutter is visible
+   *
+   * @param cellIndex
+   */
+  async waitForCodeGutter(): Promise<void> {
+    const panel = await this.activity.getPanel();
+    if (panel) {
+      await this.page.waitForSelector('.cm-gutters', {
+        state: 'attached'
+      });
+    }
+  }
+
+  /**
    * Select cells
    *
    * @param startIndex Start cell index
@@ -741,7 +1006,7 @@ export class NotebookHelper {
    */
   async isCellSelected(cellIndex: number): Promise<boolean> {
     return await this.page.evaluate((cellIndex: number) => {
-      return window.galataip.isNotebookCellSelected(cellIndex);
+      return window.galata.isNotebookCellSelected(cellIndex);
     }, cellIndex);
   }
 
@@ -756,7 +1021,7 @@ export class NotebookHelper {
     }
 
     await this.page.evaluate(() => {
-      return window.galataip.deleteNotebookCells();
+      return window.galata.deleteNotebookCells();
     });
 
     return true;
@@ -778,11 +1043,9 @@ export class NotebookHelper {
 
     await this.selectCells(numCells - 1);
     await this.clickToolbarItem('insert');
-    await Utils.waitForCondition(
-      async (): Promise<boolean> => {
-        return (await this.getCellCount()) === numCells + 1;
-      }
-    );
+    await Utils.waitForCondition(async (): Promise<boolean> => {
+      return (await this.getCellCount()) === numCells + 1;
+    });
 
     return await this.setCell(numCells, cellType, source);
   }
@@ -864,6 +1127,14 @@ export class NotebookHelper {
 
     await selectInput.selectOption(cellType);
 
+    // Wait for the new cell to be rendered
+    let cell: ElementHandle | null;
+    let counter = 1;
+    do {
+      await this.page.waitForTimeout(50);
+      cell = await this.getCell(cellIndex);
+    } while (cell === null && counter++ < MAX_RETRIES);
+
     return true;
   }
 
@@ -878,13 +1149,12 @@ export class NotebookHelper {
     if (!notebook) {
       return null;
     }
-    const cells = await notebook.$$('div.jp-Cell');
 
-    if (cellIndex < 0 || cellIndex >= cells.length) {
+    const cell = await this.getCell(cellIndex);
+
+    if (!cell) {
       return null;
     }
-
-    const cell = cells[cellIndex];
 
     const classList = await Utils.getElementClassList(cell);
 
@@ -918,10 +1188,13 @@ export class NotebookHelper {
       return false;
     }
 
+    await this.page.evaluate(cellIdx => {
+      window.galata.resetExecutionCount(cellIdx);
+    }, cellIndex);
     await this.page.keyboard.press(
       inplace === true ? 'Control+Enter' : 'Shift+Enter'
     );
-    await this.waitForRun();
+    await this.waitForRun(cellIndex);
 
     return true;
   }

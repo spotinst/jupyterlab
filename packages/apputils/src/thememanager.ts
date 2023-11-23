@@ -8,13 +8,11 @@ import {
   nullTranslator,
   TranslationBundle
 } from '@jupyterlab/translation';
-import { each } from '@lumino/algorithm';
 import { DisposableDelegate, IDisposable } from '@lumino/disposable';
 import { ISignal, Signal } from '@lumino/signaling';
 import { Widget } from '@lumino/widgets';
 import { Dialog, showDialog } from './dialog';
-import { ISplashScreen } from './splash';
-import { IThemeManager } from './tokens';
+import { ISplashScreen, IThemeManager } from './tokens';
 
 /**
  * The number of milliseconds between theme loading attempts.
@@ -81,7 +79,7 @@ export class ThemeManager implements IThemeManager {
    *
    * @param key - A Jupyterlab CSS variable, without the leading '--jp-'.
    *
-   * @return value - The current value of the Jupyterlab CSS variable
+   * @returns value - The current value of the Jupyterlab CSS variable
    */
   getCSS(key: string): string {
     return (
@@ -524,7 +522,9 @@ namespace Private {
    * Fit a widget and all of its children, recursively.
    */
   export function fitAll(widget: Widget): void {
-    each(widget.children(), fitAll);
+    for (const child of widget.children()) {
+      fitAll(child);
+    }
     widget.fit();
   }
 }

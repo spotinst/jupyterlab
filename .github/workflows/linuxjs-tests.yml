@@ -2,9 +2,9 @@ name: Linux JS Tests
 
 on:
   push:
-    branches: [3.6.x]
+    branches: [4.0.x]
   pull_request:
-    branches: [3.6.x]
+    branches: [4.0.x]
   release:
     types: [published]
 
@@ -20,8 +20,9 @@ jobs:
         group:
           [
             js-application,
-            js-cells,
+            js-apputils,
             js-cell-toolbar,
+            js-cells,
             js-codeeditor,
             js-codemirror,
             js-completer,
@@ -37,28 +38,33 @@ jobs:
             js-imageviewer,
             js-inspector,
             js-logconsole,
+            js-lsp,
             js-mainmenu,
+            js-metadataform,
+            js-metapackage,
             js-nbformat,
             js-notebook,
             js-observables,
             js-outputarea,
             js-rendermime,
+            js-services,
+            js-settingeditor,
             js-settingregistry,
             js-statedb,
             js-statusbar,
+            js-testing,
             js-terminal,
             js-toc,
             js-translation,
             js-ui-components,
             js-vega5-extension,
-            js-testutils,
           ]
       fail-fast: false
-    runs-on: ubuntu-20.04
-    timeout-minutes: 20
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Base Setup
         uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
