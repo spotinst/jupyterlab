@@ -237,7 +237,7 @@ namespace Private {
 
     label(): string {
       const { kernel, spec } = this;
-      return spec?.display_name || kernel.name;
+      return (spec?.display_name || kernel.name) + ` (nb-${kernel.id})`;
     }
 
     labelTitle(): string {
@@ -246,8 +246,8 @@ namespace Private {
       const title = [`${this.label()}: ${id}`];
       for (const session of this.sessions.running()) {
         if (this.kernel.id === session.kernel?.id) {
-          const { path, type } = session;
-          title.push(trans.__(`%1\nPath: %2`, type, path));
+          const { path, type, id } = session;
+          title.push(trans.__(`%1\nPath: %2\nId: %3`, type, path, id));
         }
       }
       return title.join('\n\n');
