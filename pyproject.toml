@@ -53,6 +53,9 @@ dynamic = [
     "version",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project.scripts]
 jlpm = "jupyterlab.jlpmapp:main"
 jupyter-lab = "jupyterlab.labapp:main"
