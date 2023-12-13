@@ -41,7 +41,7 @@ dependencies = [
     "jinja2>=3.0.3",
     "jupyter_core",
     "jupyter-lsp>=2.0.0",
-    "jupyter_server@git+https://github.com/spotinst/jupyter_server.git@test2111",
+    "jupyter_server@git+https://github.com/spotinst/jupyter_server.git@ocean-spark-jupyterserver-jlab",
     "jupyterlab_server>=2.19.0,<3",
     "notebook_shim>=0.2",
     "packaging",
