@@ -115,8 +115,7 @@ export async function startSession(
   while (count++ < 300) {
     const response = await ServerConnection.makeRequest(url, init, settings);
     if (response.status !== 201) {
-      const err = await ServerConnection.ResponseError.create(response);
-      throw err;
+      throw await ServerConnection.ResponseError.create(response);
     }
     data = await response.json();
     if (data.execution_state != "waiting") {
