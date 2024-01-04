@@ -112,10 +112,11 @@ export async function startSession(
   };
   let data = {"id": "", "execution_state": "waiting"};
   let count = 0
-  while (count++ < 30) {
+  while (count++ < 300) {
     const response = await ServerConnection.makeRequest(url, init, settings);
     if (response.status !== 201) {
-      throw await ServerConnection.ResponseError.create(response);
+      const err = await ServerConnection.ResponseError.create(response);
+      throw err;
     }
     data = await response.json();
     if (data.execution_state != "waiting") {
@@ -131,8 +132,8 @@ export async function startSession(
       console.log("Waiting for kernel in session " + data.id + " for " + count + " seconds");
     }
   }
-  if (count >= 30) {
-    throw new Error("1 minute timeout waiting for kernel to start");
+  if (count >= 300) {
+    throw new Error("10 minute timeout waiting for kernel to start");
   }
   updateLegacySessionModel(data);
   validateModel(data);
