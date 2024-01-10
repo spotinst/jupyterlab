@@ -112,7 +112,7 @@ export async function startSession(
   };
   let data = {"id": "", "execution_state": "waiting"};
   let count = 0
-  while (count++ < 600) {
+  while (count++ < 300) {
     const response = await ServerConnection.makeRequest(url, init, settings);
     if (response.status !== 201) {
       throw await ServerConnection.ResponseError.create(response);
