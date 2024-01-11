@@ -1233,7 +1233,7 @@ export class KernelConnection implements Kernel.IKernelConnection {
   /**
    * Create the kernel websocket connection and add socket status handlers.
    */
-  private _createSocket = (useProtocols = true) => {
+  private _createSocket = (useProtocols = false) => {
     this._errorIfDisposed();
 
     // Make sure the socket is clear
