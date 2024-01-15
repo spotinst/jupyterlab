@@ -128,7 +128,7 @@ export async function startSession(
         body: JSON.stringify(bodyjson)
       };
       await sleep(2000);
-      console.log("Waiting for kernel in session " + data.id + " for " + count + " seconds");
+      console.log("Waiting for kernel in session " + data.id + " for " + 2*count + " seconds");
     }
   }
   if (count >= 300) {
