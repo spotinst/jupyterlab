@@ -328,6 +328,11 @@ class ExtensionManager(LoggingConfigurable):
         Returns
             Semver compatible version
         """
+        if "/running" in version:
+            version = "~4.0.11"
+        elif "/services" in version:
+            version = "~7.0.11"
+        
         return re.sub(
             r"(a|b|rc)(\d+)$",
             lambda m: f"{PYTHON_TO_SEMVER[m.group(1)]}{m.group(2)}",
