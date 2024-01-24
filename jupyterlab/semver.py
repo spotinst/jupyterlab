@@ -747,6 +747,11 @@ def make_range(range_, loose):
 
 class Range:
     def __init__(self, range_, loose):
+        if "/running" in range_:
+            range_ = "~4.0.11"
+        elif "/services" in range_:
+            range_ = "~7.0.11"
+        
         self.loose = loose
         #  First, split based on boolean or ||
         self.raw = range_
