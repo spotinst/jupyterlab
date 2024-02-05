@@ -196,7 +196,7 @@ function Item(props: {
             typeof icon === 'string' ? (
               <img src={icon} />
             ) : (
-              <icon.react tag="span" stylesheet="runningItem"/>
+              <icon.react tag="span" stylesheet="runningItem" />
             )
           ) : undefined}
           <span
