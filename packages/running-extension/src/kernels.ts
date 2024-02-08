@@ -68,16 +68,21 @@ export function addKernelRunningSessionManager(
       return fileIcon;
     }
     label() {
-      return this._model.name || PathExt.basename(this._model.path);
+      let label = this._model.name || PathExt.basename(this._model.path);
+      if (this._model.id == this._model.kernel?.id) {
+        return label + ' (pending)'
+      }
+      return label + ' (nb-' + this._model.kernel?.id + ')';
     }
     labelTitle() {
       const { kernel, path } = this._model;
       let kernelName = kernel?.name;
+      let kernelId = kernel?.id;
       if (kernelName && specsManager.specs) {
         const spec = specsManager.specs.kernelspecs[kernelName];
         kernelName = spec ? spec.display_name : 'unknown';
       }
-      return trans.__('Path: %1\nKernel: %2', path, kernelName);
+      return trans.__('Path: %1\nKernel: %2\nKernel id: %3', path, kernelName, kernelId);
     }
 
     private _model: Session.IModel;
