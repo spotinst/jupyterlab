@@ -86,9 +86,11 @@ breaking changes. Consider documenting your maintenance plans to users in these 
 You may also wish to consider pinning the major version of JupyterLab when developing
 extensions (in your package metadata).
 
-We maintain the **two most recently released major versions of JupyterLab**,
-JupyterLab v3 and JupyterLab v4. JupyterLab v1 and v2 are no longer maintained.
-All JupyterLab v2 users are strongly advised to upgrade as soon as possible.
+We maintain a major version of JupyterLab for **one year after its successor's first release**.
+See `version lifecycle <../getting_started/lifecycle.html>`__ for details.
+JupyterLab v4 was released on May 15, 2023, so JupyterLab v3 will be maintained
+until May 15, 2024. JupyterLab v1 and v2 are no longer maintained.
+All JupyterLab v2 and v3 users are strongly advised to upgrade as soon as possible.
 
 Languages, Tools and Processes
 ------------------------------
@@ -309,7 +311,7 @@ Installing Node.js and jlpm
 Building JupyterLab from its GitHub source code requires Node.js. The
 development version requires Node.js version 18+, as defined in the
 ``engines`` specification in
-`dev_mode/package.json <https://github.com/jupyterlab/jupyterlab/blob/main/dev_mode/package.json>`__.
+`dev_mode/package.json <https://github.com/jupyterlab/jupyterlab/blob/4.1.x/dev_mode/package.json>`__.
 
 If you use `conda <https://conda.io>`__, you can get it with:
 
@@ -635,7 +637,7 @@ Visual Regression and UI Tests
 ------------------------------
 
 As part of JupyterLab CI workflows, UI tests are run with visual regression checks.
-`Galata <https://github.com/jupyterlab/jupyterlab/tree/main/galata>`__ is used for UI
+`Galata <https://github.com/jupyterlab/jupyterlab/tree/4.1.x/galata>`__ is used for UI
 testing. Galata provides `Playwright <https://playwright.dev>`__ helpers to control and
 inspect JupyterLab UI programmatically.
 
@@ -677,7 +679,7 @@ Main reasons for UI test failures are:
     The bot will react with +1 emoji to indicate that the run started and then comment
     back once it concluded.
 
-For more information on UI Testing, please read the `UI Testing developer documentation <https://github.com/jupyterlab/jupyterlab/blob/main/galata/README.md>`__
+For more information on UI Testing, please read the `UI Testing developer documentation <https://github.com/jupyterlab/jupyterlab/blob/4.1.x/galata/README.md>`__
 and `Playwright documentation <https://playwright.dev/docs/intro>`__.
 
 Good Practices for Integration tests

@@ -89,10 +89,12 @@ between cells, especially impacting users with accessibility needs.
 In JupyterLab 4.1+ the focus stays on the active cell when switching to command
 mode; this requires all shortcut selectors to be adjusted as follows:
 
-- ``.jp-Notebook:focus.jp-mod-commandMode`` should be replaced with ``.jp-Notebook.jp-mod-commandMode :focus:not(:read-write)``
-- ``.jp-Notebook:focus`` should be replaced with ``.jp-Notebook.jp-mod-commandMode :focus:not(:read-write)``
-- ``[data-jp-traversable]:focus`` should be replaced with ``.jp-Notebook.jp-mod-commandMode :focus:not(:read-write)``
-- ``[data-jp-kernel-user]:focus`` should be replaced with ``[data-jp-kernel-user] :focus:not(:read-write)``
+- ``.jp-Notebook:focus.jp-mod-commandMode``, ``.jp-Notebook:focus``, and ``[data-jp-traversable]:focus`` should be replaced with:
+  - ``.jp-Notebook.jp-mod-commandMode :focus:not(:read-write)`` for JupyterLab 4.1.0+
+  - ``.jp-Notebook.jp-mod-commandMode:not(.jp-mod-readWrite) :focus`` for JupyterLab 4.1.1+
+- ``[data-jp-kernel-user]:focus`` should be replaced with:
+  - ``[data-jp-kernel-user] :focus:not(:read-write)`` for JupyterLab 4.1.0+
+  - ``[data-jp-kernel-user]:not(.jp-mod-readWrite) :focus:not(:read-write)`` for JupyterLab 4.1.1+
 
 Please note that ``:not(:read-write)`` fragment disables shortcuts
 when text fields  (such as cell editor) are focused to avoid intercepting
@@ -100,6 +102,17 @@ characters typed by the user into the text fields, however if your shortcut
 does not correspond to any key/typographic character (e.g. most shortcuts
 with :kbd:`Ctrl` modifier) you may prefer to drop this fragment
 if you want the shortcut to be active in text fields.
+
+Further, JupyterLab 4.1.1 introduced indicator class ``.jp-mod-readWrite``
+that is applied to the notebook node when the active element accepts
+keyboard input as defined by ``:read-write`` selector. This indicator
+class is required to detect ``:read-write`` elements which are nested
+within an *open* shadow DOM (such as Panel framework widgets).
+
+If your framework uses a *closed* shadow DOM, or expects keyboard
+interactions on elements that are not recognised as editable by browser
+heuristics of ``:read-write`` selector, you need to set a data attribute
+`lm-suppress-shortcuts` on the outer host element to suppress shortcuts.
 
 To prevent breaking the user experience these changes are made transparently
 in the background, but will emit a warning and extension developers should
@@ -357,7 +370,7 @@ bumped their major version (following semver convention). We want to point out p
      ``token.findByFileName(widget.context.path)?.name ?? ''``.
 - ``@jupyterlab/docprovider`` from 3.x to 4.x
    This package is no longer present in JupyterLab. For documentation related to Real-Time Collaboration, please check out
-   `RTC's documentation <https://jupyterlab.readthedocs.io/en/latest/user/rtc.html>`_
+   `RTC's documentation <https://jupyterlab.readthedocs.io/en/stable/user/rtc.html>`_
 - ``@jupyterlab/docregistry`` from 3.x to 4.x
    * Removed the property ``docProviderFactory`` from the interface ``Context.IOptions``.
    * The constructor of the class ``DocumentModel`` receives a parameter ``DocumentModel.IOptions``.
@@ -838,7 +851,7 @@ Upgrading library versions
 The ``@phosphor/*`` libraries that JupyterLab 1.x uses have been renamed to
 ``@lumino/*``. Updating your ``package.json`` is straightforward. The easiest
 way to do this is to look in the
-`JupyterLab core packages code base <https://github.com/jupyterlab/jupyterlab/tree/main/packages>`__
+`JupyterLab core packages code base <https://github.com/jupyterlab/jupyterlab/tree/4.1.x/packages>`__
 and to simply adopt the versions of the relevant libraries that are used
 there.
 
@@ -959,7 +972,7 @@ Using ``Session`` and ``SessionContext`` to manage kernel sessions
 
   For full API documentation and examples of how to use
   ``@jupyterlab/services``,
-  `consult the repository <https://github.com/jupyterlab/jupyterlab/tree/main/packages/services#readme>`__.
+  `consult the repository <https://github.com/jupyterlab/jupyterlab/tree/4.1.x/packages/services#readme>`__.
 
 ``ConsolePanel`` and ``NotebookPanel`` now expose a
 ``sessionContext: ISessionContext`` attribute that allows for a uniform way to
@@ -994,4 +1007,4 @@ Using the new icon system and ``LabIcon``
 
   For full API documentation and examples of how to use
   the new icon support based on ``LabIcon`` from ``@jupyterlab/ui-components``,
-  `consult the repository <https://github.com/jupyterlab/jupyterlab/tree/main/packages/ui-components#readme>`__.
+  `consult the repository <https://github.com/jupyterlab/jupyterlab/tree/4.1.x/packages/ui-components#readme>`__.

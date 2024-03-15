@@ -1,9 +1,10 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 import { IJupyterLabPageFixture } from '@jupyterlab/galata';
-import { ElementHandle } from '@playwright/test';
+import { ElementHandle, Locator } from '@playwright/test';
 
 const OUTER_SELECTOR = '.jp-WindowedPanel-outer';
+const DRAGGABLE_AREA = '.jp-InputArea-prompt';
 
 /**
  * Measure how much of the **notebook** viewport does a cell take up.
@@ -48,4 +49,64 @@ export async function positionCellPartiallyBelowViewport(
   const scrollOffset =
     cellBbox.y - notebookBbox.y - notebookBbox.height + cellBbox.height * ratio;
   await page.mouse.wheel(0, scrollOffset);
+}
+
+/**
+ * Drag a cell to a given position, and wait until specified condition is met.
+ */
+export async function dragCellTo(
+  page: IJupyterLabPageFixture,
+  options: {
+    cell: Locator;
+    x: number;
+    y: number;
+    stopCondition: () => Promise<boolean>;
+  }
+) {
+  const dragHandle = options.cell.locator(DRAGGABLE_AREA);
+  const handleBBox = await dragHandle.boundingBox();
+
+  // Emulate drag and drop
+  await dragHandle.click();
+  await page.mouse.move(
+    handleBBox.x + 0.5 * handleBBox.width,
+    handleBBox.y + 0.5 * handleBBox.height
+  );
+  await page.mouse.down();
+  await page.mouse.move(options.x, options.y);
+  await page.waitForCondition(options.stopCondition);
+  await page.mouse.up();
+}
+
+/**
+ * Set the sidebar width
+ *
+ * @param page Page object
+ * @param width Sidebar width in pixels
+ * @param side Which sidebar to set: 'left' or 'right'
+ */
+export async function setSidebarWidth(
+  page: IJupyterLabPageFixture,
+  width = 251,
+  side: 'left' | 'right' = 'left'
+): Promise<void> {
+  const handles = page.locator(
+    '#jp-main-split-panel > .lm-SplitPanel-handle:not(.lm-mod-hidden)'
+  );
+  const splitHandle =
+    side === 'left'
+      ? await handles.first().elementHandle()
+      : await handles.last().elementHandle();
+  const handleBBox = await splitHandle.boundingBox();
+
+  await page.mouse.move(
+    handleBBox.x + 0.5 * handleBBox.width,
+    handleBBox.y + 0.5 * handleBBox.height
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    side === 'left' ? 33 + width : page.viewportSize().width - 33 - width,
+    handleBBox.y + 0.5 * handleBBox.height
+  );
+  await page.mouse.up();
 }
