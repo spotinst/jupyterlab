@@ -97,7 +97,7 @@
     "@jupyterlab/rendermime-interfaces": "~3.9.5",
     "@jupyterlab/running": "~4.1.5",
     "@jupyterlab/running-extension": "~4.1.5",
-    "@jupyterlab/services": "~7.1.5",
+    "@jupyterlab/services": "../packages/services",
     "@jupyterlab/settingeditor": "~4.1.5",
     "@jupyterlab/settingeditor-extension": "~4.1.5",
     "@jupyterlab/settingregistry": "~4.1.5",

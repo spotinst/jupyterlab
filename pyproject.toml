@@ -10,7 +10,7 @@ name = "jupyterlab"
 description = "JupyterLab computational environment"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 authors = [
     { name = "Jupyter Development Team", email = "jupyter@googlegroups.com" },
 ]
@@ -41,7 +41,7 @@ dependencies = [
     "ipykernel",
     "jinja2>=3.0.3",
     "jupyter_core",
-    "jupyter_server>=2.4.0,<3",
+    "jupyter_server@git+https://github.com/spotinst/jupyter_server.git@ocean-spark-jupyterserver-jlab",
     "jupyter-lsp>=2.0.0",
     "jupyterlab_server>=2.19.0,<3",
     "notebook_shim>=0.2",
@@ -53,6 +53,9 @@ dependencies = [
 dynamic = [
     "version",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [project.scripts]
 jlpm = "jupyterlab.jlpmapp:main"
