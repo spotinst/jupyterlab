@@ -374,8 +374,8 @@ function createFileMenu(
   commands.addCommand(CommandIDs.shutdown, {
     label: trans.__('Shut Down'),
     caption: trans.__('Shut down JupyterLab'),
-    isVisible: () => menu.quitEntry,
-    isEnabled: () => menu.quitEntry,
+    isVisible: () => false,
+    isEnabled: () => false,
     execute: () => {
       return showDialog({
         title: trans.__('Shutdown confirmation'),
@@ -442,8 +442,8 @@ function createFileMenu(
   commands.addCommand(CommandIDs.logout, {
     label: trans.__('Log Out'),
     caption: trans.__('Log out of JupyterLab'),
-    isVisible: () => menu.quitEntry,
-    isEnabled: () => menu.quitEntry,
+    isVisible: () => false,
+    isEnabled: () => false,
     execute: () => {
       router.navigate('/logout', { hard: true });
     }
