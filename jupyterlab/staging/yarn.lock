@@ -1613,9 +1613,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/mainmenu-extension@npm:~4.3.0-beta.2":
+"@jupyterlab/mainmenu-extension@file:../../packages/mainmenu-extension::locator=%40jupyterlab%2Fapplication-top%40workspace%3A.":
   version: 4.3.0-beta.2
-  resolution: "@jupyterlab/mainmenu-extension@npm:4.3.0-beta.2"
+  resolution: "@jupyterlab/mainmenu-extension@file:../../packages/mainmenu-extension#../../packages/mainmenu-extension::hash=0b637f&locator=%40jupyterlab%2Fapplication-top%40workspace%3A."
   dependencies:
     "@jupyterlab/application": ^4.3.0-beta.2
     "@jupyterlab/apputils": ^4.4.0-beta.2
@@ -1632,7 +1632,7 @@ __metadata:
     "@lumino/disposable": ^2.1.2
     "@lumino/messaging": ^2.0.1
     "@lumino/widgets": ^2.3.2
-  checksum: 2a429b38b6cac765d08d15c0f9ab9284c7cd33550243dfdddf3c232d8f10fc18d3e912e8c30b4569eb24cd4ac293e5795bede1cebf2c9658035f894eac345fb1
+  checksum: 023dfe2d8ae9da2666813aecef0587e22031c395c8cfd90a785d8025483f854092b210b6dd8a8cc62dfa67211b953434ca03c6d3e4d5b6d0dcc15babce69a381
   languageName: node
   linkType: hard
 
@@ -2053,9 +2053,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/services@npm:~7.3.0-beta.2":
+"@jupyterlab/services@file:../../packages/services::locator=%40jupyterlab%2Fapplication-top%40workspace%3A.":
   version: 7.3.0-beta.2
-  resolution: "@jupyterlab/services@npm:7.3.0-beta.2"
+  resolution: "@jupyterlab/services@file:../../packages/services#../../packages/services::hash=1132c2&locator=%40jupyterlab%2Fapplication-top%40workspace%3A."
   dependencies:
     "@jupyter/ydoc": ^3.0.0-a8
     "@jupyterlab/coreutils": ^6.3.0-beta.2
@@ -2068,7 +2068,7 @@ __metadata:
     "@lumino/properties": ^2.0.1
     "@lumino/signaling": ^2.1.2
     ws: ^8.11.0
-  checksum: e4ba15ce54bcdecef93bd8ef9686a13fee6a93c2efeb92d39773fdcdbbaf56456bc4b257b5ea5d333fc8080eca9fe43315cd8a65d587e9f0ea79c0bd676bbb77
+  checksum: d95a11a29fdbe959ca46a91f7dd4622b93f6ffaa714bb917dc4448efefc3015ccad8f42082a96a6fd19e1fe0c41a10449704bec9e1ad0f0afa4276568ac19163
   languageName: node
   linkType: hard
 
@@ -2382,9 +2382,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/ui-components@npm:~4.3.0-beta.2":
+"@jupyterlab/ui-components@file:../../packages/ui-components::locator=%40jupyterlab%2Fapplication-top%40workspace%3A.":
   version: 4.3.0-beta.2
-  resolution: "@jupyterlab/ui-components@npm:4.3.0-beta.2"
+  resolution: "@jupyterlab/ui-components@file:../../packages/ui-components#../../packages/ui-components::hash=ce011c&locator=%40jupyterlab%2Fapplication-top%40workspace%3A."
   dependencies:
     "@jupyter/react-components": ^0.16.6
     "@jupyter/web-components": ^0.16.6
@@ -2409,7 +2409,7 @@ __metadata:
     typestyle: ^2.0.4
   peerDependencies:
     react: ^18.2.0
-  checksum: f98374f1c203b4af472f5b960ed9d5bec4502564a41c87a66cacf98776cd7226505c314d500bb66c8de5a938f33601012ba376616ee6d770ef1d9314c8bd62b1
+  checksum: 6543494d1fa2970f2af6f6791e66d161a8e04913c5cd3788e3dc8eb690fddbff25222e3d4894ace6ab798c0fc3b7573646ab84367e4d89fbeee21dea0128fe07
   languageName: node
   linkType: hard
 
