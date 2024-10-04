@@ -161,16 +161,56 @@ export async function updateSession(
   settings: ServerConnection.ISettings = ServerConnection.makeSettings()
 ): Promise<Session.IModel> {
   const url = getSessionUrl(settings.baseUrl, model.id);
-  const init = {
+  const body = JSON.stringify(model);
+  const bodyjson = JSON.parse(body);
+  bodyjson['id'] = '';
+  let init = {
     method: 'PATCH',
     body: JSON.stringify(model)
   };
-  const response = await ServerConnection.makeRequest(url, init, settings);
+  let data = { id: '', execution_state: 'waiting' };
+  let count = 0;
+  while (count++ < 300) {
+    const response = await ServerConnection.makeRequest(url, init, settings);
+    console.log("erm")
+    console.log(response)
+    if (response.status !== 200 && response.status !== 201) {
+      throw await ServerConnection.ResponseError.create(response);
+    }
+    data = await response.json();
+    console.log("mu")
+    console.log(data)
+    if (data.execution_state != 'waiting') {
+      console.log(
+          'Kernel started in update session ' + data.id + ' after ' + count + ' seconds'
+      );
+      break;
+    } else {
+      bodyjson['id'] = data.id;
+      init = {
+        method: 'PATCH',
+        body: JSON.stringify(bodyjson)
+      };
+      await sleep(2000);
+      console.log(
+          'Waiting for kernel in update session ' +
+          data.id +
+          ' for ' +
+          2 * count +
+          ' seconds'
+      );
+    }
+  }
+  if (count >= 300) {
+    throw new Error('10 minute timeout waiting for kernel to start');
+  }
+  console.log("Out of loop")
+  /*const response = await ServerConnection.makeRequest(url, init, settings);
   if (response.status !== 200) {
     const err = await ServerConnection.ResponseError.create(response);
     throw err;
   }
-  const data = await response.json();
+  const data = await response.json();*/
   updateLegacySessionModel(data);
   validateModel(data);
   return data;
