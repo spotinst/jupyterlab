@@ -747,6 +747,13 @@ def make_range(range_, loose):
 
 class Range:
     def __init__(self, range_, loose):
+        if "/services" in range_:
+            range_ = "~7.2.5"
+        elif "/ui-components" in range_:
+            range_ = "~4.2.5"
+        elif "/mainmenu-extension" in range_:
+            range_ = "~4.2.5"
+        
         self.loose = loose
         #  First, split based on boolean or ||
         self.raw = range_

@@ -370,8 +370,8 @@ function createFileMenu(
   commands.addCommand(CommandIDs.shutdown, {
     label: trans.__('Shut Down'),
     caption: trans.__('Shut down %1', app.name),
-    isVisible: () => menu.quitEntry,
-    isEnabled: () => menu.quitEntry,
+    isVisible: () => false,
+    isEnabled: () => false,
     execute: () => {
       return showDialog({
         title: trans.__('Shutdown confirmation'),
