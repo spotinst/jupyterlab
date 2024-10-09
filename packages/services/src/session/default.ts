@@ -209,7 +209,7 @@ export class SessionConnection implements Session.ISessionConnection {
    * Dispose of the resources held by the session.
    */
   dispose(): void {
-    if (this.isDisposed) {
+    if (this._updating || this.isDisposed) {
       return;
     }
     this._isDisposed = true;
