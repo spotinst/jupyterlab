@@ -209,7 +209,7 @@ export class SessionConnection implements Session.ISessionConnection {
    * Dispose of the resources held by the session.
    */
   dispose(): void {
-    if (this.isDisposed) {
+    if (this._updating || this.isDisposed) {
       return;
     }
     this._isDisposed = true;
@@ -391,10 +391,16 @@ export class SessionConnection implements Session.ISessionConnection {
   private async _patch(
     body: DeepPartial<Session.IModel>
   ): Promise<Session.IModel> {
-    const model = await updateSession(
-      { ...body, id: this._id },
-      this.serverSettings
-    );
+    this._updating = true;
+    let model: Session.IModel;
+    try {
+      model = await updateSession(
+        {...body, id: this._id},
+        this.serverSettings
+      );
+    } finally {
+      this._updating = false;
+    }
     this.update(model);
     return model;
   }
@@ -422,6 +428,7 @@ export class SessionConnection implements Session.ISessionConnection {
   private _clientId: string;
   private _kernel: Kernel.IKernelConnection | null = null;
   private _isDisposed = false;
+  private _updating = false;
   private _disposed = new Signal<this, void>(this);
   private _kernelChanged = new Signal<
     this,
