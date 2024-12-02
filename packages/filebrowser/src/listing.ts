@@ -194,6 +194,11 @@ const DESCENDING_CLASS = 'jp-mod-descending';
 const PREFIX_APPEND_DURATION = 1000;
 
 /**
+ * The default width of the resize handle.
+ */
+const DEFAULT_HANDLE_WIDTH = 5;
+
+/**
  * The threshold in pixels to start a drag event.
  */
 const DRAG_THRESHOLD = 5;
@@ -873,11 +878,19 @@ export class DirListing extends Widget {
     if (!width) {
       width = this.node.getBoundingClientRect().width;
     }
-    const paddingWidth = window
-      .getComputedStyle(this.node)
-      .getPropertyValue('--jp-dirlisting-padding-width');
 
-    return width - parseFloat(paddingWidth) * 2 - this._contentScrollbarWidth;
+    this._paddingWidth = parseFloat(
+      window
+        .getComputedStyle(this.node)
+        .getPropertyValue('--jp-dirlisting-padding-width')
+    );
+
+    const handle = this.node.querySelector(`.${RESIZE_HANDLE_CLASS}`);
+
+    this._handleWidth = handle
+      ? handle.getBoundingClientRect().width
+      : DEFAULT_HANDLE_WIDTH;
+    return width - this._paddingWidth * 2 - this._contentScrollbarWidth;
   }
 
   /**
@@ -1183,9 +1196,25 @@ export class DirListing extends Widget {
       }
     }
 
+    const resizeHandles = this.node.getElementsByClassName(RESIZE_HANDLE_CLASS);
+    const resizableColumns = visibleColumns.map(column =>
+      Private.isResizable(column)
+    );
+
     // Write to DOM
+    let i = 0;
     for (const column of visibleColumns) {
-      const size = this._columnSizes[column.id];
+      let size = this._columnSizes[column.id];
+
+      if (Private.isResizable(column) && size) {
+        size -=
+          (this._handleWidth * resizeHandles.length) / resizableColumns.length;
+        // if this is first resizable or last resizable column
+        if (i === 0 || i === resizableColumns.length - 1) {
+          size += this._paddingWidth;
+        }
+        i += 1;
+      }
       column.element.style.width = size === null ? '' : size + 'px';
     }
     this._updateModifiedStyleAndSize();
@@ -2518,6 +2547,8 @@ export class DirListing extends Widget {
   private _contentSizeObserver = new ResizeObserver(
     this._onContentResize.bind(this)
   );
+  private _paddingWidth: number = 0;
+  private _handleWidth: number = DEFAULT_HANDLE_WIDTH;
 }
 
 /**
@@ -2870,7 +2901,11 @@ export namespace DirListing {
             small: trans.__('Modified'),
             large: trans.__('Last Modified')
           }),
-        file_size: () => this.createHeaderItemNode(trans.__('File Size')),
+        file_size: () =>
+          this._createHeaderItemNodeWithSizes({
+            small: trans.__('Size'),
+            large: trans.__('File Size')
+          }),
         is_selected: () =>
           this.createCheckboxWrapperNode({
             alwaysVisible: true,
@@ -3323,9 +3358,23 @@ export namespace DirListing {
       fileType?: DocumentRegistry.IFileType
     ): HTMLElement {
       const dragImage = node.cloneNode(true) as HTMLElement;
-      const modified = DOMUtils.findElement(dragImage, ITEM_MODIFIED_CLASS);
       const icon = DOMUtils.findElement(dragImage, ITEM_ICON_CLASS);
-      dragImage.removeChild(modified as HTMLElement);
+
+      // Hide additional columns from the drag image to keep it unobtrusive.
+      const extraColumns = DirListing.columns.filter(
+        column => column.id !== 'name'
+      );
+      for (const extraColumn of extraColumns) {
+        const columnElement = DOMUtils.findElement(
+          dragImage,
+          extraColumn.itemClassName
+        );
+        if (!columnElement) {
+          // We can only remove columns which are rendered.
+          continue;
+        }
+        dragImage.removeChild(columnElement);
+      }
 
       if (!fileType) {
         icon.textContent = '';

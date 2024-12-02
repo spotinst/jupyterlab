@@ -323,7 +323,7 @@ Installing Node.js and jlpm
 Building JupyterLab from its GitHub source code requires Node.js. The
 development version requires Node.js version 20+, as defined in the
 ``engines`` specification in
-`dev_mode/package.json <https://github.com/jupyterlab/jupyterlab/blob/main/dev_mode/package.json>`__.
+`dev_mode/package.json <https://github.com/jupyterlab/jupyterlab/blob/4.3.x/dev_mode/package.json>`__.
 
 If you use `conda <https://conda.io>`__, you can get it with:
 
@@ -652,7 +652,7 @@ Visual Regression and UI Tests
 ------------------------------
 
 As part of JupyterLab CI workflows, UI tests are run with visual regression checks.
-`Galata <https://github.com/jupyterlab/jupyterlab/tree/main/galata>`__ is used for UI
+`Galata <https://github.com/jupyterlab/jupyterlab/tree/4.3.x/galata>`__ is used for UI
 testing. Galata provides `Playwright <https://playwright.dev>`__ helpers to control and
 inspect JupyterLab UI programmatically.
 
@@ -686,7 +686,7 @@ Main reasons for UI test failures are:
    to do that, you can post a comment on your PR with the following content:
 
    - ``please update galata snapshots``: A bot will push a new commit to your PR updating galata
-     test snaphsots.
+     test snapshots.
    - ``please update documentation snapshots``: A bot will push a new commit to your PR updating
      documentation test snapshots.
    - ``please update snapshots``: Combine the two previous comments effects.
@@ -694,7 +694,7 @@ Main reasons for UI test failures are:
     The bot will react with +1 emoji to indicate that the run started and then comment
     back once it concluded.
 
-For more information on UI Testing, please read the `UI Testing developer documentation <https://github.com/jupyterlab/jupyterlab/blob/main/galata/README.md>`__
+For more information on UI Testing, please read the `UI Testing developer documentation <https://github.com/jupyterlab/jupyterlab/blob/4.3.x/galata/README.md>`__
 and `Playwright documentation <https://playwright.dev/docs/intro>`__.
 
 Good Practices for Integration tests

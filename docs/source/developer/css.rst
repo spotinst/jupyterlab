@@ -73,7 +73,7 @@ CSS variable usage
 ^^^^^^^^^^^^^^^^^^
 
 JupyterLab includes a default set of CSS variables in the file
-`packages/theme-light-extension/style/variables.css <https://github.com/jupyterlab/jupyterlab/blob/main/packages/theme-light-extension/style/variables.css>`_.
+`packages/theme-light-extension/style/variables.css <https://github.com/jupyterlab/jupyterlab/blob/4.3.x/packages/theme-light-extension/style/variables.css>`_.
 
 To ensure consistent design in JupyterLab, all built-in and third party
 extensions should use these variables in their styles if at all
@@ -241,6 +241,7 @@ intended to be used for adding context menu items and keyboard shortcuts.
 -  ``jp-mod-editMode``: applied to a notebook in edit mode
 -  ``jp-mod-has-primary-selection``: applied to editors that have a primary selection
 -  ``jp-mod-in-leading-whitespace``: applied to editors that have a selection within the beginning whitespace of a line
+-  ``jp-mod-at-line-beginning``: applied to editors that can host a completer and have a selection within the beginning whitespace of a line
 -  ``jp-mod-tooltip``: applied to the body when a tooltip exists on the page
 
 **CSS selectors that target data attributes**
