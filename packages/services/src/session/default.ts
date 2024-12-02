@@ -391,7 +391,6 @@ export class SessionConnection implements Session.ISessionConnection {
   private async _patch(
     body: DeepPartial<Session.IModel>
   ): Promise<Session.IModel> {
-    console.log("updating simmmmmmmi")
     this._updating = true;
     let model: Session.IModel;
     try {
@@ -401,7 +400,6 @@ export class SessionConnection implements Session.ISessionConnection {
       );
     } finally {
         this._updating = false;
-        console.log("done updating simmmmmmmi")
     }
     this.update(model);
     return model;
