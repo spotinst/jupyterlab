@@ -675,7 +675,7 @@
       "title": "Notify about code execution if kernel is initializing",
       "description": "Display notification if code cells are run while kernel is initializing.",
       "type": "boolean",
-      "default": false
+      "default": true
     },
     "codeCellConfig": {
       "title": "Code Cell Configuration",
