@@ -566,9 +566,9 @@ export class StaticNotebook extends WindowedList {
         metadata:
           this.notebookConfig.defaultCell === 'code'
             ? {
-                // This is an empty cell created in empty notebook, thus is trusted
-                trusted: true
-              }
+              // This is an empty cell created in empty notebook, thus is trusted
+              trusted: true
+            }
             : {}
       });
     }
@@ -624,9 +624,9 @@ export class StaticNotebook extends WindowedList {
                 metadata:
                   this.notebookConfig.defaultCell === 'code'
                     ? {
-                        // This is an empty cell created in empty notebook, thus is trusted
-                        trusted: true
-                      }
+                      // This is an empty cell created in empty notebook, thus is trusted
+                      trusted: true
+                    }
                     : {}
               });
             }
@@ -855,9 +855,8 @@ export class StaticNotebook extends WindowedList {
         10
       );
       if (globalIndex >= start && globalIndex < end) {
-        (cell as HTMLElement).dataset.windowedListIndex = `${
-          globalIndex + delta
-        }`;
+        (cell as HTMLElement).dataset.windowedListIndex = `${globalIndex + delta
+          }`;
       }
     }
   }
@@ -1229,7 +1228,7 @@ export namespace StaticNotebook {
    * Default configuration options for notebooks.
    */
   export const defaultNotebookConfig: INotebookConfig = {
-    enableKernelInitNotification: false,
+    enableKernelInitNotification: true,
     showHiddenCellsButton: true,
     scrollPastEnd: true,
     defaultCell: 'code',
@@ -1252,8 +1251,7 @@ export namespace StaticNotebook {
    */
   export class ContentFactory
     extends Cell.ContentFactory
-    implements IContentFactory
-  {
+    implements IContentFactory {
     /**
      * Create a new code cell widget.
      *
@@ -1295,7 +1293,7 @@ export namespace StaticNotebook {
     /**
      * Options for the content factory.
      */
-    export interface IOptions extends Cell.ContentFactory.IOptions {}
+    export interface IOptions extends Cell.ContentFactory.IOptions { }
   }
 }
 
@@ -2742,7 +2740,7 @@ export class Notebook extends StaticNotebook {
       selected.length,
       countString,
       activeCell?.model.sharedModel.getSource().split('\n')[0].slice(0, 26) ??
-        ''
+      ''
     );
 
     // Set up the drag event.
@@ -2958,12 +2956,12 @@ export namespace Notebook {
   /**
    * An options object for initializing a notebook widget.
    */
-  export interface IOptions extends StaticNotebook.IOptions {}
+  export interface IOptions extends StaticNotebook.IOptions { }
 
   /**
    * The content factory for the notebook widget.
    */
-  export interface IContentFactory extends StaticNotebook.IContentFactory {}
+  export interface IContentFactory extends StaticNotebook.IContentFactory { }
 
   /**
    * The default implementation of a notebook content factory..
@@ -2972,7 +2970,7 @@ export namespace Notebook {
    * Override methods on this class to customize the default notebook factory
    * methods that create notebook content.
    */
-  export class ContentFactory extends StaticNotebook.ContentFactory {}
+  export class ContentFactory extends StaticNotebook.ContentFactory { }
 
   /**
    * A namespace for the notebook content factory.
@@ -2981,7 +2979,7 @@ export namespace Notebook {
     /**
      * An options object for initializing a notebook content factory.
      */
-    export interface IOptions extends StaticNotebook.ContentFactory.IOptions {}
+    export interface IOptions extends StaticNotebook.ContentFactory.IOptions { }
   }
 }
 
