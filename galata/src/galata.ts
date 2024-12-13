@@ -36,7 +36,9 @@ export namespace galata {
       fetchNews: 'false'
     },
     '@jupyterlab/fileeditor-extension:plugin': {},
-    '@jupyterlab/notebook-extension:tracker': {},
+    '@jupyterlab/notebook-extension:tracker': {
+      enableKernelInitNotification: true
+    },
     '@jupyterlab/codemirror-extension:plugin': {
       defaultConfig: {
         cursorBlinkRate: 0
